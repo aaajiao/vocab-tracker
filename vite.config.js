@@ -6,6 +6,7 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
+    host: true,
     proxy: {
       '/api/openai': {
         target: 'https://api.openai.com',
