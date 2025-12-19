@@ -153,12 +153,19 @@ async function speakWord(text, language, setSpeakingId, wordId, apiKey) {
         return;
     }
 
-    // Try with retry logic
-    let retries = 2;
+    // Try with retry logic (Exponential Backoff)
+    let retries = 0;
+    const maxRetries = 3;
     let response;
 
-    while (retries >= 0) {
+    while (retries <= maxRetries) {
         try {
+            // Optimization: Add ellipsis to short words to prevent cutoff
+            // Many users report OpenAI TTS cuts off the end of single words.
+            const apiInput = (text.length < 50 && !text.endsWith('.') && !text.endsWith('!'))
+                ? `${text}...`
+                : text;
+
             response = await fetch('/api/openai/v1/audio/speech', {
                 method: 'POST',
                 headers: {
@@ -166,9 +173,9 @@ async function speakWord(text, language, setSpeakingId, wordId, apiKey) {
                     'Authorization': `Bearer ${apiKey}`
                 },
                 body: JSON.stringify({
-                    model: 'tts-1',
+                    model: 'gpt-4o-mini-tts',
                     voice: 'nova',
-                    input: text,
+                    input: apiInput,
                     speed: 0.9
                 }),
                 signal: AbortSignal.timeout(10000) // 10s timeout
@@ -178,22 +185,23 @@ async function speakWord(text, language, setSpeakingId, wordId, apiKey) {
 
             // If we're here, response was not OK
             const errorData = await response.json().catch(() => ({}));
-            console.warn(`TTS attempt failed (${response.status}):`, errorData);
+            console.warn(`TTS attempt ${retries + 1} failed (${response.status}):`, errorData);
 
-            if (response.status === 429) { // Rate limit - wait a bit
-                await new Promise(r => setTimeout(r, 1000));
-            }
+            // Wait with exponential backoff: 500ms, 1000ms, 2000ms
+            const delay = 500 * Math.pow(2, retries);
+            await new Promise(r => setTimeout(r, delay));
         } catch (e) {
-            console.warn(`TTS network attempt failed, retries left: ${retries}`, e);
+            console.warn(`TTS network attempt ${retries + 1} failed:`, e);
+            const delay = 500 * Math.pow(2, retries);
+            await new Promise(r => setTimeout(r, delay));
         }
 
-        retries--;
-        if (retries < 0) {
+        retries++;
+        if (retries > maxRetries) {
             useBrowserTTS();
             setSpeakingId(null);
             return;
         }
-        await new Promise(r => setTimeout(r, 500)); // Short delay between retries
     }
 
     try {
