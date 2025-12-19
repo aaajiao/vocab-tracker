@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { supabase } from './supabaseClient';
 
 // Icons
 const Icons = {
@@ -11,14 +12,16 @@ const Icons = {
     Speaker: ({ playing }) => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />{playing ? <><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14" /></> : <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />}</svg>,
     Sparkles: () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" /><path d="M5 3v4" /><path d="M19 17v4" /><path d="M3 5h4" /><path d="M17 19h4" /></svg>,
     Refresh: () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" /><path d="M16 16h5v5" /></svg>,
-    Settings: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z" /></svg>
+    Settings: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z" /></svg>,
+    LogOut: () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" x2="9" y1="12" y2="12" /></svg>,
+    Cloud: () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" /></svg>
 };
 
 // Claude AI - Get translation and contextual example
 async function getAIContent(text, sourceLang, apiKey) {
     try {
         const langName = sourceLang === 'en' ? 'English' : 'German';
-        const response = await fetch("/api/anthropic/v1/messages", { // Proxy
+        const response = await fetch("/api/anthropic/v1/messages", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -27,7 +30,7 @@ async function getAIContent(text, sourceLang, apiKey) {
                 "anthropic-dangerous-direct-browser-access": "true"
             },
             body: JSON.stringify({
-                model: "claude-3-haiku-20240307", // Most compatible/fastest
+                model: "claude-3-haiku-20240307",
                 max_tokens: 300,
                 messages: [{
                     role: "user",
@@ -69,7 +72,7 @@ Respond in this exact JSON format only, no other text:
 async function regenerateExample(word, meaning, sourceLang, apiKey) {
     try {
         const langName = sourceLang === 'en' ? 'English' : 'German';
-        const response = await fetch("/api/anthropic/v1/messages", { // Proxy
+        const response = await fetch("/api/anthropic/v1/messages", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -134,7 +137,97 @@ async function speakWord(text, language, setSpeakingId, wordId) {
     setSpeakingId(null);
 }
 
+// Auth Component
+function AuthForm({ onAuth }) {
+    const [isLogin, setIsLogin] = useState(true);
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setError('');
+
+        try {
+            if (isLogin) {
+                const { error } = await supabase.auth.signInWithPassword({ email, password });
+                if (error) throw error;
+            } else {
+                const { error } = await supabase.auth.signUp({ email, password });
+                if (error) throw error;
+                setError('注册成功！请查看邮箱确认链接。');
+            }
+        } catch (err) {
+            setError(err.message);
+        }
+        setLoading(false);
+    };
+
+    return (
+        <div className="container">
+            <div className="header" style={{ justifyContent: 'center' }}>
+                <div className="header-left">
+                    <div className="header-icon"><Icons.Book /></div>
+                    <div>
+                        <div className="header-title">词汇本</div>
+                        <div className="header-subtitle"><Icons.Cloud /> 云端同步版</div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="form-card" style={{ maxWidth: '400px', margin: '2rem auto' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', textAlign: 'center' }}>
+                    {isLogin ? '登录' : '注册'}
+                </h3>
+
+                <form onSubmit={handleSubmit}>
+                    <input
+                        className="input"
+                        type="email"
+                        placeholder="邮箱"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                    />
+                    <input
+                        className="input"
+                        type="password"
+                        placeholder="密码"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        required
+                        minLength={6}
+                    />
+
+                    {error && (
+                        <div style={{ fontSize: '0.75rem', color: error.includes('成功') ? '#059669' : '#ef4444', marginBottom: '0.5rem' }}>
+                            {error}
+                        </div>
+                    )}
+
+                    <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} disabled={loading}>
+                        {loading ? '处理中...' : (isLogin ? '登录' : '注册')}
+                    </button>
+                </form>
+
+                <div style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.875rem' }}>
+                    <span style={{ color: '#64748b' }}>{isLogin ? '没有账户？' : '已有账户？'}</span>
+                    <button
+                        onClick={() => { setIsLogin(!isLogin); setError(''); }}
+                        style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontWeight: 500 }}
+                    >
+                        {isLogin ? '注册' : '登录'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function App() {
+    const [user, setUser] = useState(null);
     const [words, setWords] = useState([]);
     const [activeTab, setActiveTab] = useState('all');
     const [searchQuery, setSearchQuery] = useState('');
@@ -144,36 +237,128 @@ function App() {
     const [aiLoading, setAiLoading] = useState(false);
     const [speakingId, setSpeakingId] = useState(null);
     const [regeneratingId, setRegeneratingId] = useState(null);
-    const [apiKey, setApiKey] = useState(import.meta.env.VITE_ANTHROPIC_API_KEY || '');
+    const [apiKey, setApiKey] = useState(() => {
+        // 优先使用 localStorage 中的值
+        const savedKey = localStorage.getItem('vocab-api-key');
+        const wasDeleted = localStorage.getItem('vocab-api-key-deleted');
+        if (savedKey) return savedKey;
+        // 如果用户明确删除了，不使用环境变量
+        if (wasDeleted) return '';
+        // 否则使用环境变量
+        return import.meta.env.VITE_ANTHROPIC_API_KEY || '';
+    });
     const [showSettings, setShowSettings] = useState(false);
+    const [syncing, setSyncing] = useState(false);
 
     const inputRef = useRef(null);
     const aiTimeoutRef = useRef(null);
 
-    // Load
+    // Auth state listener
     useEffect(() => {
-        try {
-            const saved = localStorage.getItem('vocab-words-v4');
-            if (saved) setWords(JSON.parse(saved));
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setUser(session?.user ?? null);
+            if (session?.user) loadWords(session.user.id);
+            else setLoading(false);
+        });
 
-            const savedKey = localStorage.getItem('vocab-api-key');
-            if (savedKey) setApiKey(savedKey);
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setUser(session?.user ?? null);
+            if (session?.user) loadWords(session.user.id);
+            else {
+                setWords([]);
+                setLoading(false);
+            }
+        });
 
-        } catch (e) { console.error(e) }
-        setLoading(false);
+        return () => subscription.unsubscribe();
     }, []);
 
-    // Save
-    useEffect(() => {
-        if (!loading) localStorage.setItem('vocab-words-v4', JSON.stringify(words));
-    }, [words, loading]);
+    // Load words from Supabase
+    const loadWords = async (userId) => {
+        setLoading(true);
+        const { data, error } = await supabase
+            .from('words')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('Load error:', error);
+        } else {
+            // Convert DB format to app format
+            const formatted = data.map(w => ({
+                id: w.id,
+                word: w.word,
+                meaning: w.meaning,
+                language: w.language,
+                example: w.example || '',
+                exampleCn: w.example_cn || '',
+                category: w.category || '',
+                date: w.date,
+                timestamp: new Date(w.created_at).getTime()
+            }));
+            setWords(formatted);
+
+            // Migrate localStorage data if exists
+            await migrateLocalStorage(userId);
+        }
+
+        // Load saved API key
+        const savedKey = localStorage.getItem('vocab-api-key');
+        if (savedKey) setApiKey(savedKey);
+
+        setLoading(false);
+    };
+
+    // Migrate localStorage data to Supabase
+    const migrateLocalStorage = async (userId) => {
+        const localData = localStorage.getItem('vocab-words-v4');
+        if (!localData) return;
+
+        try {
+            const localWords = JSON.parse(localData);
+            if (localWords.length === 0) return;
+
+            setSyncing(true);
+
+            for (const w of localWords) {
+                const { error } = await supabase.from('words').upsert({
+                    user_id: userId,
+                    word: w.word,
+                    meaning: w.meaning,
+                    language: w.language,
+                    example: w.example,
+                    example_cn: w.exampleCn,
+                    category: w.category || '',
+                    date: w.date
+                }, { onConflict: 'user_id,word,language' });
+
+                if (error) console.error('Migration error:', error);
+            }
+
+            // Reload words after migration
+            await loadWords(userId);
+
+            // Clear localStorage after successful migration
+            localStorage.removeItem('vocab-words-v4');
+            console.log(`Migrated ${localWords.length} words to cloud`);
+
+            setSyncing(false);
+        } catch (e) {
+            console.error('Migration failed:', e);
+            setSyncing(false);
+        }
+    };
 
     // Save API Key
     useEffect(() => {
-        if (!loading && apiKey !== import.meta.env.VITE_ANTHROPIC_API_KEY) {
-            localStorage.setItem('vocab-api-key', apiKey);
+        if (!loading) {
+            if (apiKey) {
+                localStorage.setItem('vocab-api-key', apiKey);
+                localStorage.removeItem('vocab-api-key-deleted');
+            }
         }
-    }, [apiKey]);
+    }, [apiKey, loading]);
 
     // Focus
     useEffect(() => {
@@ -184,8 +369,7 @@ function App() {
     useEffect(() => {
         if (!newWord.word.trim()) return;
         if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
-
-        if (!apiKey) return; // Don't try if no key
+        if (!apiKey) return;
 
         aiTimeoutRef.current = setTimeout(async () => {
             if (newWord.word.trim().length >= 1) {
@@ -211,30 +395,70 @@ function App() {
         if (!word || !apiKey) return;
         setRegeneratingId(wordId);
         const newEx = await regenerateExample(word.word, word.meaning, word.language, apiKey);
-        if (newEx) {
-            setWords(prev => prev.map(w => w.id === wordId ? { ...w, example: newEx.example, exampleCn: newEx.exampleCn } : w));
+        if (newEx && user) {
+            // Update in Supabase
+            const { error } = await supabase
+                .from('words')
+                .update({ example: newEx.example, example_cn: newEx.exampleCn })
+                .eq('id', wordId);
+
+            if (!error) {
+                setWords(prev => prev.map(w => w.id === wordId ? { ...w, example: newEx.example, exampleCn: newEx.exampleCn } : w));
+            }
         }
         setRegeneratingId(null);
     };
 
-    const addWord = () => {
-        if (!newWord.word.trim() || !newWord.meaning.trim()) return;
-        setWords(prev => [{
-            id: Date.now().toString(),
+    const addWord = async () => {
+        if (!newWord.word.trim() || !newWord.meaning.trim() || !user) return;
+
+        setSyncing(true);
+
+        const { data, error } = await supabase.from('words').insert({
+            user_id: user.id,
             word: newWord.word.trim(),
             meaning: newWord.meaning.trim(),
             language: newWord.language,
             example: newWord.example.trim(),
-            exampleCn: newWord.exampleCn.trim(),
+            example_cn: newWord.exampleCn.trim(),
             category: newWord.category,
-            date: new Date().toISOString().split('T')[0],
-            timestamp: Date.now()
-        }, ...prev]);
+            date: new Date().toISOString().split('T')[0]
+        }).select().single();
+
+        if (error) {
+            console.error('Add error:', error);
+        } else {
+            setWords(prev => [{
+                id: data.id,
+                word: data.word,
+                meaning: data.meaning,
+                language: data.language,
+                example: data.example || '',
+                exampleCn: data.example_cn || '',
+                category: data.category || '',
+                date: data.date,
+                timestamp: new Date(data.created_at).getTime()
+            }, ...prev]);
+        }
+
         setNewWord({ word: '', meaning: '', language: newWord.language, example: '', exampleCn: '', category: '' });
         setIsAdding(false);
+        setSyncing(false);
     };
 
-    const deleteWord = (id) => setWords(prev => prev.filter(w => w.id !== id));
+    const deleteWord = async (id) => {
+        if (!user) return;
+
+        const { error } = await supabase.from('words').delete().eq('id', id);
+
+        if (!error) {
+            setWords(prev => prev.filter(w => w.id !== id));
+        }
+    };
+
+    const handleLogout = async () => {
+        await supabase.auth.signOut();
+    };
 
     const filteredWords = words.filter(w => {
         const matchesTab = activeTab === 'all' || w.language === activeTab;
@@ -283,6 +507,11 @@ function App() {
         today: words.filter(w => w.date === new Date().toISOString().split('T')[0]).length
     };
 
+    // Show auth form if not logged in
+    if (!user && !loading) {
+        return <AuthForm onAuth={setUser} />;
+    }
+
     if (loading) return <div className="container" style={{ textAlign: 'center', paddingTop: '4rem', color: '#64748b' }}>Loading...</div>;
 
     return (
@@ -293,7 +522,9 @@ function App() {
                     <div className="header-icon"><Icons.Book /></div>
                     <div>
                         <div className="header-title">词汇本</div>
-                        <div className="header-subtitle"><Icons.Sparkles /> AI 翻译 · 例句 · 发音</div>
+                        <div className="header-subtitle">
+                            <Icons.Cloud /> 云端同步 {syncing && '· 同步中...'}
+                        </div>
                     </div>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -301,22 +532,73 @@ function App() {
                     {words.length > 0 && (
                         <button className="btn btn-ghost" onClick={exportWords}><Icons.Download /> 导出</button>
                     )}
+                    <button className="btn btn-ghost" onClick={handleLogout} title="退出登录"><Icons.LogOut /></button>
                 </div>
             </div>
 
-            {/* Settings Panel */}
-            {showSettings && (
-                <div className="form-card" style={{ marginBottom: '1.5rem', background: '#f8fafc', borderColor: '#cbd5e1' }}>
-                    <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>Settings</h3>
+            {/* API Key Warning - Show when no API key is set */}
+            {!apiKey && (
+                <div className="form-card" style={{
+                    marginBottom: '1.5rem',
+                    background: '#fef2f2',
+                    borderColor: '#fecaca',
+                    border: '1px solid #fecaca'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                        <span style={{ fontSize: '1.25rem' }}>⚠️</span>
+                        <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: '#dc2626', margin: 0 }}>需要 Claude API Key</h3>
+                    </div>
+                    <p style={{ fontSize: '0.75rem', color: '#991b1b', marginBottom: '0.75rem', lineHeight: 1.5 }}>
+                        本应用使用 Claude AI 进行翻译和例句生成。请输入您的 Anthropic API Key 才能使用 AI 功能。
+                        <br />
+                        <a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer"
+                            style={{ color: '#2563eb', textDecoration: 'underline' }}>
+                            → 获取 API Key
+                        </a>
+                    </p>
                     <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '0.25rem', color: '#64748b' }}>Anthropic API Key</label>
                     <input
                         className="input"
                         type="password"
-                        placeholder="sk-ant-..."
+                        placeholder="sk-ant-api03-xxxxx"
                         value={apiKey}
                         onChange={(e) => setApiKey(e.target.value)}
+                        style={{ borderColor: '#fecaca' }}
                     />
-                    <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Key is stored locally in your browser.</div>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.25rem' }}>
+                        Key 仅保存在本地浏览器中，不会上传到服务器。
+                    </div>
+                </div>
+            )}
+
+            {/* Settings Panel */}
+            {showSettings && apiKey && (
+                <div className="form-card" style={{ marginBottom: '1.5rem', background: '#f8fafc', borderColor: '#cbd5e1' }}>
+                    <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>Settings</h3>
+                    <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '0.25rem', color: '#64748b' }}>Anthropic API Key</label>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <input
+                            className="input"
+                            type="password"
+                            placeholder="sk-ant-..."
+                            value={apiKey}
+                            onChange={(e) => setApiKey(e.target.value)}
+                            style={{ marginBottom: 0, flex: 1 }}
+                        />
+                        <button
+                            className="btn btn-ghost"
+                            onClick={() => {
+                                setApiKey('');
+                                localStorage.removeItem('vocab-api-key');
+                                localStorage.setItem('vocab-api-key-deleted', 'true');
+                            }}
+                            style={{ color: '#dc2626', flexShrink: 0 }}
+                            title="删除 API Key"
+                        >
+                            <Icons.Trash /> 删除
+                        </button>
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.5rem' }}>Key is stored locally. 账户: {user?.email}</div>
                 </div>
             )}
 
@@ -375,7 +657,9 @@ function App() {
                         </>
                     )}
                     <div className="form-actions">
-                        <button className="btn btn-primary" onClick={addWord} disabled={!newWord.word.trim() || !newWord.meaning.trim() || aiLoading}>保存</button>
+                        <button className="btn btn-primary" onClick={addWord} disabled={!newWord.word.trim() || !newWord.meaning.trim() || aiLoading || syncing}>
+                            {syncing ? '保存中...' : '保存'}
+                        </button>
                         <button className="btn btn-ghost" onClick={() => { setIsAdding(false); setNewWord({ word: '', meaning: '', language: 'en', example: '', exampleCn: '', category: '' }); }}>取消</button>
                     </div>
                 </div>
@@ -421,7 +705,7 @@ function App() {
                 ))
             )}
 
-            <div className="footer"><Icons.Sparkles /> 点击单词听发音 · 点击 ↻ 重新生成例句</div>
+            <div className="footer"><Icons.Cloud /> 数据已同步到云端 · 点击单词听发音</div>
         </div>
     );
 }

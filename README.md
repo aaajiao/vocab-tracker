@@ -1,0 +1,160 @@
+# 词汇本 (Vocab Tracker)
+
+一个基于 AI 的多语言词汇学习应用，支持英语和德语。输入单词后，AI 自动生成中文翻译、情境例句，并提供原声发音。
+
+![React](https://img.shields.io/badge/React-19.0-61DAFB?logo=react)
+![Vite](https://img.shields.io/badge/Vite-7.3-646CFF?logo=vite)
+![Claude AI](https://img.shields.io/badge/Claude_AI-Haiku-orange)
+
+## ✨ 功能特性
+
+- **🤖 AI 智能翻译**：使用 Claude AI 自动生成准确的中文翻译
+- **📝 情境例句**：根据词汇性质（日常/专业/正式）生成匹配的例句
+- **🔊 原声发音**：点击单词即可听到标准发音
+- **🇬🇧🇩🇪 双语支持**：同时支持英语和德语词汇
+- **📊 学习统计**：实时显示总词汇量、各语言数量和今日新增
+- **🔍 快速搜索**：支持按单词或翻译搜索
+- **📅 按日期分组**：词汇按添加日期自动分组显示
+- **📤 CSV 导出**：支持导出词汇数据
+- **💾 本地存储**：数据保存在浏览器本地，无需注册
+
+## 🚀 快速开始
+
+### 前提条件
+
+- Node.js 19+
+- npm 或 pnpm
+- **Anthropic API Key（必需）**：[获取地址](https://console.anthropic.com/)
+  > ⚠️ **注意**：没有 Claude API Key 将无法使用本项目的 AI 翻译和例句生成功能。应用启动后会提示您输入 API Key。
+
+### 安装
+
+```bash
+# 克隆项目
+git clone <repository-url>
+cd vocab-tracker
+
+# 安装依赖
+npm install
+```
+
+### 配置 API Key
+
+**方式一：环境变量（推荐）**
+
+创建 `.env` 文件：
+
+```env
+VITE_ANTHROPIC_API_KEY=sk-ant-api03-xxxxx
+```
+
+**方式二：应用内设置**
+
+启动应用后，点击右上角的设置图标 ⚙️，输入 API Key。
+
+### 启动开发服务器
+
+```bash
+npm run dev
+```
+
+访问 http://localhost:5173
+
+## 📁 项目结构
+
+```
+vocab-tracker/
+├── src/
+│   ├── App.jsx         # 主应用组件
+│   ├── index.css       # 样式表
+│   └── main.jsx        # 入口文件
+├── .vscode/
+│   ├── launch.json     # VS Code 调试配置
+│   └── tasks.json      # VS Code 任务配置
+├── index.html          # HTML 模板
+├── vite.config.js      # Vite 配置（含 API 代理）
+├── package.json        # 项目依赖
+├── .env                # 环境变量（需自行创建）
+└── .gitignore          # Git 忽略规则
+```
+
+## 🔧 技术架构
+
+### 前端
+
+| 技术 | 用途 |
+|------|------|
+| React 19 | UI 框架 |
+| Vite 7 | 构建工具 |
+| Supabase | 云存储 & 认证 |
+| Space Grotesk | 字体 |
+
+### AI 服务
+
+| 服务 | 用途 |
+|------|------|
+| Claude AI (Haiku) | 翻译 & 例句生成 |
+| Google TTS | 发音服务 |
+| Web Speech API | 备用发音 |
+
+### API 代理
+
+应用通过 Vite 开发服务器代理 Anthropic API 请求，避免浏览器 CORS 限制：
+
+```
+/api/anthropic/* → https://api.anthropic.com/*
+```
+
+## 🎨 使用指南
+
+### 添加单词
+
+1. 点击 **添加** 按钮
+2. 选择语言（英语 🇬🇧 / 德语 🇩🇪）
+3. 输入单词或短语
+4. 等待 AI 自动生成翻译和例句
+5. 点击 **保存**
+
+### 发音播放
+
+点击任意单词即可播放发音。
+
+### 重新生成例句
+
+将鼠标悬停在例句上，点击右侧的 ↻ 按钮生成新例句。
+
+### 导出数据
+
+点击右上角的 **导出** 按钮，下载 CSV 格式的词汇数据。
+
+## 🛠️ 开发调试
+
+### VS Code 调试
+
+项目已配置 VS Code 调试环境，直接在调试面板选择 `Debug React App` 即可。
+
+调试会自动启动 Vite 开发服务器并打开 Chrome。
+
+### 构建生产版本
+
+```bash
+npm run build
+```
+
+构建产物位于 `dist/` 目录。
+
+### 预览生产版本
+
+```bash
+npm run preview
+```
+
+## 📝 注意事项
+
+- API Key 存储在浏览器本地，请勿在公共设备上使用
+- 词汇数据保存在 LocalStorage，清除浏览器数据会丢失
+- 建议定期导出词汇备份
+
+## 📄 License
+
+MIT
