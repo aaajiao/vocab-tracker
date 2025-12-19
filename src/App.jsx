@@ -69,6 +69,51 @@ Respond in this exact JSON format only, no other text:
     }
 }
 
+// OpenAI - Detect language and get content
+async function detectAndGetContent(text, apiKey) {
+    try {
+        const response = await fetch("/api/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model: "gpt-4o-mini",
+                max_tokens: 300,
+                messages: [
+                    { role: "system", content: "You are a translation assistant. Always respond with valid JSON only." },
+                    {
+                        role: "user",
+                        content: `Analyze this word/phrase: "${text}"
+
+1. Detect whether it is primarily English or German.
+2. Provide Chinese translation (concise).
+3. Provide one example sentence in the detected language with Chinese translation.
+
+IMPORTANT: Match the example to the word's nature (daily/professional/formal).
+
+Respond in this exact JSON format only:
+{"language": "en|de", "translation": "中文翻译", "example": "Example sentence", "exampleCn": "例句中文翻译", "category": "daily|professional|formal"}`
+                    }
+                ]
+            })
+        });
+
+        const data = await response.json();
+        if (data.error) return null;
+
+        if (data.choices && data.choices[0] && data.choices[0].message) {
+            const jsonStr = data.choices[0].message.content.trim().replace(/```json\n?|\n?```/g, '').trim();
+            return JSON.parse(jsonStr);
+        }
+        return null;
+    } catch (e) {
+        console.error('Detection error:', e);
+        return null;
+    }
+}
+
 // Regenerate example
 async function regenerateExample(word, meaning, sourceLang, apiKey) {
     try {
@@ -346,6 +391,7 @@ function App() {
 
     const inputRef = useRef(null);
     const aiTimeoutRef = useRef(null);
+    const ignoreFetch = useRef(false);
 
     // Auth state listener
     useEffect(() => {
@@ -461,6 +507,10 @@ function App() {
 
     // AI content
     useEffect(() => {
+        if (ignoreFetch.current) {
+            ignoreFetch.current = false;
+            return;
+        }
         if (!newWord.word.trim()) return;
         if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
         if (!apiKey) return;
@@ -503,6 +553,37 @@ function App() {
         setRegeneratingId(null);
     };
 
+    const handleStartAdd = async () => {
+        setIsAdding(true);
+        if (searchQuery.trim()) {
+            const text = searchQuery.trim();
+
+            // Set word but ignore the standard AI fetch effect
+            ignoreFetch.current = true;
+            setNewWord(prev => ({ ...prev, word: text }));
+
+            if (apiKey) {
+                setAiLoading(true);
+                // Smart detect
+                const content = await detectAndGetContent(text, apiKey);
+
+                if (content) {
+                    // Update all fields, ignore effect again
+                    ignoreFetch.current = true;
+                    setNewWord(prev => ({
+                        ...prev,
+                        language: content.language,
+                        meaning: content.translation,
+                        example: content.example,
+                        exampleCn: content.exampleCn,
+                        category: content.category
+                    }));
+                }
+                setAiLoading(false);
+            }
+        }
+    };
+
     const addWord = async () => {
         if (!newWord.word.trim() || !newWord.meaning.trim() || !user) return;
 
@@ -537,6 +618,7 @@ function App() {
 
         setNewWord({ word: '', meaning: '', language: newWord.language, example: '', exampleCn: '', category: '' });
         setIsAdding(false);
+        setSearchQuery(''); // Clear search so all words appear
         setSyncing(false);
     };
 
@@ -667,9 +749,9 @@ function App() {
 
             {/* Settings Panel */}
             {showSettings && apiKey && (
-                <div className="form-card" style={{ marginBottom: '1.5rem', background: '#f8fafc', borderColor: '#cbd5e1' }}>
-                    <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>Settings</h3>
-                    <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '0.25rem', color: '#64748b' }}>OpenAI API Key</label>
+                <div className="settings-panel">
+                    <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>Settings</h3>
+                    <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '0.25rem', color: 'var(--text-tertiary)' }}>OpenAI API Key</label>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                         <input
                             className="input"
@@ -692,7 +774,7 @@ function App() {
                             <Icons.Trash /> 删除
                         </button>
                     </div>
-                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.5rem' }}>Key is stored locally. 账户: {user?.email}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-quaternary)', marginTop: '0.5rem' }}>Key is stored locally. 账户: {user?.email}</div>
                 </div>
             )}
 
@@ -711,7 +793,7 @@ function App() {
                     <div className="search-icon"><Icons.Search /></div>
                     <input className="search-input" placeholder="搜索单词..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
                 </div>
-                <button className="btn btn-primary" onClick={() => setIsAdding(true)}><Icons.Plus /> 添加</button>
+                <button className="btn btn-primary" onClick={handleStartAdd}><Icons.Plus /> 添加</button>
             </div>
 
             {/* Tabs */}
