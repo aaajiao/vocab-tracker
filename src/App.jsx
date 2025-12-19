@@ -282,25 +282,34 @@ async function speakWord(text, language, setSpeakingId, wordId, apiKey, onCacheU
 
 // Auth Component
 function AuthForm({ onAuth }) {
-    const [isLogin, setIsLogin] = useState(true);
+    const [view, setView] = useState('login'); // 'login', 'signup', 'forgot'
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [message, setMessage] = useState('');
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
         setError('');
+        setMessage('');
 
         try {
-            if (isLogin) {
+            if (view === 'login') {
                 const { error } = await supabase.auth.signInWithPassword({ email, password });
                 if (error) throw error;
-            } else {
+            } else if (view === 'signup') {
                 const { error } = await supabase.auth.signUp({ email, password });
                 if (error) throw error;
-                setError('注册成功！请查看邮箱确认链接。');
+                setMessage('注册成功！请查看邮箱确认链接。');
+                // Don't switch view, let them see the message
+            } else if (view === 'forgot') {
+                const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                    redirectTo: window.location.origin,
+                });
+                if (error) throw error;
+                setMessage('重置链接已发送！请查看您的邮箱。');
             }
         } catch (err) {
             setError(err.message);
@@ -324,7 +333,9 @@ function AuthForm({ onAuth }) {
 
             <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6 shadow-sm mb-6 max-w-sm mx-auto">
                 <h3 className="text-base font-semibold mb-4 text-center text-slate-800 dark:text-slate-100">
-                    {isLogin ? '登录' : '注册'}
+                    {view === 'login' && '登录'}
+                    {view === 'signup' && '注册'}
+                    {view === 'forgot' && '重置密码'}
                 </h3>
 
                 <form onSubmit={handleSubmit}>
@@ -336,35 +347,76 @@ function AuthForm({ onAuth }) {
                         onChange={(e) => setEmail(e.target.value)}
                         required
                     />
-                    <input
-                        className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-slate-400 dark:focus:border-slate-500 mb-2 text-slate-800 dark:text-slate-100"
-                        type="password"
-                        placeholder="密码"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
-                        minLength={6}
-                    />
+                    {view !== 'forgot' && (
+                        <input
+                            className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-slate-400 dark:focus:border-slate-500 mb-2 text-slate-800 dark:text-slate-100"
+                            type="password"
+                            placeholder="密码"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                            minLength={6}
+                        />
+                    )}
 
                     {error && (
-                        <div style={{ fontSize: '0.75rem', color: error.includes('成功') ? '#059669' : '#ef4444', marginBottom: '0.5rem' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#ef4444', marginBottom: '0.5rem' }}>
                             {error}
                         </div>
                     )}
 
+                    {message && (
+                        <div style={{ fontSize: '0.75rem', color: '#059669', marginBottom: '0.5rem' }}>
+                            {message}
+                        </div>
+                    )}
+
                     <button className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 dark:bg-slate-100 dark:hover:bg-slate-200 dark:text-slate-900 text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed mt-2" disabled={loading}>
-                        {loading ? '处理中...' : (isLogin ? '登录' : '注册')}
+                        {loading ? '处理中...' : (
+                            view === 'login' ? '登录' : (view === 'signup' ? '注册' : '发送重置链接')
+                        )}
                     </button>
                 </form>
 
-                <div className="text-center mt-4 text-sm">
-                    <span className="text-slate-500 dark:text-slate-400">{isLogin ? '没有账户？' : '已有账户？'}</span>
-                    <button
-                        onClick={() => { setIsLogin(!isLogin); setError(''); }}
-                        className="bg-transparent border-none text-blue-600 hover:text-blue-700 font-medium cursor-pointer ml-1"
-                    >
-                        {isLogin ? '注册' : '登录'}
-                    </button>
+                <div className="text-center mt-4 text-sm flex flex-col gap-2">
+                    {view === 'login' && (
+                        <>
+                            <button
+                                onClick={() => { setView('forgot'); setError(''); setMessage(''); }}
+                                className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                            >
+                                忘记密码？
+                            </button>
+                            <div>
+                                <span className="text-slate-500 dark:text-slate-400">没有账户？</span>
+                                <button
+                                    onClick={() => { setView('signup'); setError(''); setMessage(''); }}
+                                    className="bg-transparent border-none text-blue-600 hover:text-blue-700 font-medium cursor-pointer ml-1"
+                                >
+                                    注册
+                                </button>
+                            </div>
+                        </>
+                    )}
+                    {view === 'signup' && (
+                        <div>
+                            <span className="text-slate-500 dark:text-slate-400">已有账户？</span>
+                            <button
+                                onClick={() => { setView('login'); setError(''); setMessage(''); }}
+                                className="bg-transparent border-none text-blue-600 hover:text-blue-700 font-medium cursor-pointer ml-1"
+                            >
+                                登录
+                            </button>
+                        </div>
+                    )}
+                    {view === 'forgot' && (
+                        <button
+                            onClick={() => { setView('login'); setError(''); setMessage(''); }}
+                            className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors"
+                        >
+                            返回登录
+                        </button>
+                    )}
                 </div>
             </div>
         </div>
@@ -402,6 +454,8 @@ function App() {
         }
         return 'light';
     });
+    const [showPasswordUpdate, setShowPasswordUpdate] = useState(false);
+    const [newPassword, setNewPassword] = useState('');
 
     const inputRef = useRef(null);
     const aiTimeoutRef = useRef(null);
@@ -426,7 +480,10 @@ function App() {
             else setLoading(false);
         });
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+            if (event === 'PASSWORD_RECOVERY') {
+                setShowPasswordUpdate(true);
+            }
             setUser(session?.user ?? null);
             if (session?.user) loadWords(session.user.id);
             else {
@@ -745,6 +802,53 @@ function App() {
                     <button className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 rounded-lg transition-colors" onClick={handleLogout} title="退出登录"><Icons.LogOut /></button>
                 </div>
             </div>
+
+            {/* Password Update Modal */}
+            {showPasswordUpdate && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-xl w-full max-w-sm">
+                        <h3 className="text-lg font-bold mb-4 text-slate-800 dark:text-slate-100">设置新密码</h3>
+                        <p className="text-sm text-slate-500 mb-4">请输入您的新密码。</p>
+                        <form onSubmit={async (e) => {
+                            e.preventDefault();
+                            if (newPassword.length < 6) return;
+                            const { error } = await supabase.auth.updateUser({ password: newPassword });
+                            if (!error) {
+                                setShowPasswordUpdate(false);
+                                setNewPassword('');
+                                alert('密码修改成功！');
+                            } else {
+                                alert('修改失败：' + error.message);
+                            }
+                        }}>
+                            <input
+                                className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-slate-400 dark:focus:border-slate-500 mb-4 text-slate-800 dark:text-slate-100"
+                                type="password"
+                                placeholder="新密码 (至少6位)"
+                                value={newPassword}
+                                onChange={(e) => setNewPassword(e.target.value)}
+                                minLength={6}
+                                required
+                            />
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPasswordUpdate(false)}
+                                    className="flex-1 px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700"
+                                >
+                                    取消
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="flex-1 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium"
+                                >
+                                    确认修改
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             {/* API Key Warning - Show when no API key is set */}
             {!apiKey && (

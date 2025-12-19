@@ -165,6 +165,17 @@ npm run build
 npm run preview
 ```
 
+## 🌐 Supabase 生产环境配置
+
+项目上线发布后，为确保**邮件重置密码**功能正常跳转，需在 Supabase 后台完成以下配置：
+
+1.  登录 [Supabase Dashboard](https://supabase.com/dashboard) 并进入本项目。
+2.  导航至 **Authentication** > **URL Configuration**。
+3.  **Site URL**: 设置为你的生产环境主域名（例如 `https://your-domain.com`）。
+4.  **Redirect URLs**: 添加你的生产环境 URL（例如 `https://your-domain.com/**`）。
+    - ⚠️ **注意**：重置密码邮件中的链接会跳转到此 URL。若未配置正确，用户点击邮件链接后将无法回到应用设置新密码。
+5.  **Email Templates** (可选): 在 **Authentication** > **Email Templates** 中检查 "Reset Password" 模板，确保 `{{ .ConfirmationURL }}` 宏被正确包含。
+
 ## 📝 注意事项
 
 - API Key 存储在浏览器本地，请勿在公共设备上使用
