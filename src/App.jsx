@@ -17,24 +17,24 @@ const Icons = {
     Cloud: () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" /></svg>
 };
 
-// Claude AI - Get translation and contextual example
+// OpenAI - Get translation and contextual example
 async function getAIContent(text, sourceLang, apiKey) {
     try {
         const langName = sourceLang === 'en' ? 'English' : 'German';
-        const response = await fetch("/api/anthropic/v1/messages", {
+        const response = await fetch("/api/openai/v1/chat/completions", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "x-api-key": apiKey,
-                "anthropic-version": "2023-06-01",
-                "anthropic-dangerous-direct-browser-access": "true"
+                "Authorization": `Bearer ${apiKey}`
             },
             body: JSON.stringify({
-                model: "claude-3-haiku-20240307",
+                model: "gpt-4o-mini",
                 max_tokens: 300,
-                messages: [{
-                    role: "user",
-                    content: `For this ${langName} word/phrase: "${text}"
+                messages: [
+                    { role: "system", content: "You are a translation assistant. Always respond with valid JSON only." },
+                    {
+                        role: "user",
+                        content: `For this ${langName} word/phrase: "${text}"
 
 Please provide:
 1. Chinese translation (concise, include article for German nouns)
@@ -47,7 +47,8 @@ IMPORTANT: Match the example to the word's nature:
 
 Respond in this exact JSON format only, no other text:
 {"translation": "中文翻译", "example": "Example sentence", "exampleCn": "例句中文翻译", "category": "daily|professional|formal"}`
-                }]
+                    }
+                ]
             })
         });
 
@@ -57,13 +58,13 @@ Respond in this exact JSON format only, no other text:
             return null;
         }
 
-        if (data.content && data.content[0] && data.content[0].text) {
-            const jsonStr = data.content[0].text.trim().replace(/```json\n?|\n?```/g, '').trim();
+        if (data.choices && data.choices[0] && data.choices[0].message) {
+            const jsonStr = data.choices[0].message.content.trim().replace(/```json\n?|\n?```/g, '').trim();
             return JSON.parse(jsonStr);
         }
         return null;
     } catch (e) {
-        console.error('Claude API error:', e);
+        console.error('OpenAI API error:', e);
         return null;
     }
 }
@@ -72,20 +73,20 @@ Respond in this exact JSON format only, no other text:
 async function regenerateExample(word, meaning, sourceLang, apiKey) {
     try {
         const langName = sourceLang === 'en' ? 'English' : 'German';
-        const response = await fetch("/api/anthropic/v1/messages", {
+        const response = await fetch("/api/openai/v1/chat/completions", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "x-api-key": apiKey,
-                "anthropic-version": "2023-06-01",
-                "anthropic-dangerous-direct-browser-access": "true"
+                "Authorization": `Bearer ${apiKey}`
             },
             body: JSON.stringify({
-                model: "claude-3-haiku-20240307",
+                model: "gpt-4o-mini",
                 max_tokens: 200,
-                messages: [{
-                    role: "user",
-                    content: `Generate a NEW, different example sentence for this ${langName} word: "${word}" (meaning: ${meaning})
+                messages: [
+                    { role: "system", content: "You are a translation assistant. Always respond with valid JSON only." },
+                    {
+                        role: "user",
+                        content: `Generate a NEW, different example sentence for this ${langName} word: "${word}" (meaning: ${meaning})
 
 Match the context to the word's nature:
 - Everyday words → casual, daily-life scenarios
@@ -94,13 +95,14 @@ Match the context to the word's nature:
 
 Respond in this exact JSON format only:
 {"example": "New example sentence in ${langName}", "exampleCn": "例句中文翻译"}`
-                }]
+                    }
+                ]
             })
         });
 
         const data = await response.json();
-        if (data.content && data.content[0] && data.content[0].text) {
-            const jsonStr = data.content[0].text.trim().replace(/```json\n?|\n?```/g, '').trim();
+        if (data.choices && data.choices[0] && data.choices[0].message) {
+            const jsonStr = data.choices[0].message.content.trim().replace(/```json\n?|\n?```/g, '').trim();
             return JSON.parse(jsonStr);
         }
         return null;
@@ -110,30 +112,114 @@ Respond in this exact JSON format only:
     }
 }
 
-// TTS
-async function speakWord(text, language, setSpeakingId, wordId) {
+// Audio Cache to save bandwidth and make repeated plays instant
+const audioCache = new Map();
+
+// TTS - OpenAI Text-to-Speech
+async function speakWord(text, language, setSpeakingId, wordId, apiKey) {
     setSpeakingId(wordId);
+
+    // Cache key
+    const cacheKey = `${language}:${text}`;
+
+    // Fallback to browser speech synthesis
+    const useBrowserTTS = () => {
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+            const u = new SpeechSynthesisUtterance(text);
+            u.lang = language === 'en' ? 'en-US' : 'de-DE';
+            u.rate = 0.85;
+            window.speechSynthesis.speak(u);
+        }
+    };
+
+    // Check cache first
+    if (audioCache.has(cacheKey)) {
+        try {
+            const audio = new Audio(audioCache.get(cacheKey));
+            await audio.play();
+            setSpeakingId(null);
+            return;
+        } catch (e) {
+            console.error('Cache playback failed:', e);
+            audioCache.delete(cacheKey); // Clear bad cache
+        }
+    }
+
+    // If no API key, use browser TTS
+    if (!apiKey) {
+        useBrowserTTS();
+        setSpeakingId(null);
+        return;
+    }
+
+    // Try with retry logic
+    let retries = 2;
+    let response;
+
+    while (retries >= 0) {
+        try {
+            response = await fetch('/api/openai/v1/audio/speech', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({
+                    model: 'tts-1',
+                    voice: 'nova',
+                    input: text,
+                    speed: 0.9
+                }),
+                signal: AbortSignal.timeout(10000) // 10s timeout
+            });
+
+            if (response.ok) break;
+
+            // If we're here, response was not OK
+            const errorData = await response.json().catch(() => ({}));
+            console.warn(`TTS attempt failed (${response.status}):`, errorData);
+
+            if (response.status === 429) { // Rate limit - wait a bit
+                await new Promise(r => setTimeout(r, 1000));
+            }
+        } catch (e) {
+            console.warn(`TTS network attempt failed, retries left: ${retries}`, e);
+        }
+
+        retries--;
+        if (retries < 0) {
+            useBrowserTTS();
+            setSpeakingId(null);
+            return;
+        }
+        await new Promise(r => setTimeout(r, 500)); // Short delay between retries
+    }
+
     try {
-        const langCode = language === 'en' ? 'en' : 'de';
-        const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${langCode}&client=tw-ob`;
+        const audioBlob = await response.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+
+        // Save to cache for next time
+        audioCache.set(cacheKey, audioUrl);
+
         const audio = new Audio(audioUrl);
-        audio.playbackRate = 0.9;
         await new Promise((resolve) => {
             audio.onended = resolve;
             audio.onerror = () => {
-                if ('speechSynthesis' in window) {
-                    window.speechSynthesis.cancel();
-                    const u = new SpeechSynthesisUtterance(text);
-                    u.lang = language === 'en' ? 'en-US' : 'de-DE';
-                    u.rate = 0.85;
-                    u.onend = resolve;
-                    u.onerror = resolve;
-                    window.speechSynthesis.speak(u);
-                } else resolve();
+                useBrowserTTS();
+                resolve();
             };
-            audio.play().catch(() => audio.onerror());
+            audio.play().catch((err) => {
+                console.error('Playback error:', err);
+                useBrowserTTS();
+                resolve();
+            });
         });
-    } catch (e) { console.error('TTS error:', e); }
+    } catch (e) {
+        console.error('Final TTS processing error:', e);
+        useBrowserTTS();
+    }
     setSpeakingId(null);
 }
 
@@ -546,21 +632,21 @@ function App() {
                 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
                         <span style={{ fontSize: '1.25rem' }}>⚠️</span>
-                        <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: '#dc2626', margin: 0 }}>需要 Claude API Key</h3>
+                        <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: '#dc2626', margin: 0 }}>需要 OpenAI API Key</h3>
                     </div>
                     <p style={{ fontSize: '0.75rem', color: '#991b1b', marginBottom: '0.75rem', lineHeight: 1.5 }}>
-                        本应用使用 Claude AI 进行翻译和例句生成。请输入您的 Anthropic API Key 才能使用 AI 功能。
+                        本应用使用 OpenAI 进行翻译、例句生成和语音朗读。请输入您的 OpenAI API Key 才能使用完整功能。
                         <br />
-                        <a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer"
+                        <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer"
                             style={{ color: '#2563eb', textDecoration: 'underline' }}>
                             → 获取 API Key
                         </a>
                     </p>
-                    <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '0.25rem', color: '#64748b' }}>Anthropic API Key</label>
+                    <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '0.25rem', color: '#64748b' }}>OpenAI API Key</label>
                     <input
                         className="input"
                         type="password"
-                        placeholder="sk-ant-api03-xxxxx"
+                        placeholder="sk-proj-xxxxx"
                         value={apiKey}
                         onChange={(e) => setApiKey(e.target.value)}
                         style={{ borderColor: '#fecaca' }}
@@ -575,12 +661,12 @@ function App() {
             {showSettings && apiKey && (
                 <div className="form-card" style={{ marginBottom: '1.5rem', background: '#f8fafc', borderColor: '#cbd5e1' }}>
                     <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>Settings</h3>
-                    <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '0.25rem', color: '#64748b' }}>Anthropic API Key</label>
+                    <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '0.25rem', color: '#64748b' }}>OpenAI API Key</label>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                         <input
                             className="input"
                             type="password"
-                            placeholder="sk-ant-..."
+                            placeholder="sk-proj-..."
                             value={apiKey}
                             onChange={(e) => setApiKey(e.target.value)}
                             style={{ marginBottom: 0, flex: 1 }}
@@ -639,7 +725,7 @@ function App() {
                     <input ref={inputRef} className="input" placeholder="输入单词或短语" value={newWord.word} onChange={e => setNewWord(p => ({ ...p, word: e.target.value }))} />
                     {aiLoading ? (
                         <>
-                            <div className="ai-loading"><Icons.Sparkles /> Claude AI 分析中...</div>
+                            <div className="ai-loading"><Icons.Sparkles /> GPT 分析中...</div>
                             <div className="ai-loading" style={{ height: '60px' }}></div>
                         </>
                     ) : (
@@ -683,7 +769,7 @@ function App() {
                                         <div className="word-badges">
                                             <span className={`badge ${word.language === 'en' ? 'badge-en' : 'badge-de'}`}>{word.language === 'en' ? '🇬🇧' : '🇩🇪'}</span>
                                             {word.category && <span className={`badge ${getCategoryClass(word.category)}`}>{getCategoryLabel(word.category)}</span>}
-                                            <span className="word-text" onClick={() => speakWord(word.word, word.language, setSpeakingId, word.id)}>
+                                            <span className="word-text" onClick={() => speakWord(word.word, word.language, setSpeakingId, word.id, apiKey)}>
                                                 {word.word}
                                                 <button className={`speaker-btn ${speakingId === word.id ? 'speaking' : ''}`}><Icons.Speaker playing={speakingId === word.id} /></button>
                                             </span>

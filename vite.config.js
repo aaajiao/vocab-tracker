@@ -6,15 +6,11 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api/anthropic': {
-        target: 'https://api.anthropic.com',
+      '/api/openai': {
+        target: 'https://api.openai.com',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/anthropic/, ''),
-        secure: false,
-        headers: {
-          'Origin': 'https://api.anthropic.com',
-          'Referer': 'https://api.anthropic.com'
-        }
+        rewrite: (path) => path.replace(/^\/api\/openai/, ''),
+        secure: false
       }
     }
   }

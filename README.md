@@ -1,16 +1,16 @@
 # 词汇本 (Vocab Tracker)
 
-一个基于 AI 的多语言词汇学习应用，支持英语和德语。输入单词后，AI 自动生成中文翻译、情境例句，并提供原声发音。
+一个基于 AI 的多语言词汇学习应用，支持英语和德语。输入单词后，AI 自动生成中文翻译、情境例句，并提供高质量语音朗读。
 
 ![React](https://img.shields.io/badge/React-19.0-61DAFB?logo=react)
 ![Vite](https://img.shields.io/badge/Vite-7.3-646CFF?logo=vite)
-![Claude AI](https://img.shields.io/badge/Claude_AI-Haiku-orange)
+![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4o--mini-412991?logo=openai)
 
 ## ✨ 功能特性
 
-- **🤖 AI 智能翻译**：使用 Claude AI 自动生成准确的中文翻译
+- **🤖 AI 智能翻译**：使用 OpenAI GPT-4o-mini 自动生成准确的中文翻译
 - **📝 情境例句**：根据词汇性质（日常/专业/正式）生成匹配的例句
-- **🔊 原声发音**：点击单词即可听到标准发音
+- **🔊 高质量语音**：使用 OpenAI TTS 提供自然的语音朗读（英语 / 德语）
 - **🇬🇧🇩🇪 双语支持**：同时支持英语和德语词汇
 - **📊 学习统计**：实时显示总词汇量、各语言数量和今日新增
 - **🔍 快速搜索**：支持按单词或翻译搜索
@@ -24,8 +24,8 @@
 
 - Node.js 19+
 - npm 或 pnpm
-- **Anthropic API Key（必需）**：[获取地址](https://console.anthropic.com/)
-  > ⚠️ **注意**：没有 Claude API Key 将无法使用本项目的 AI 翻译和例句生成功能。应用启动后会提示您输入 API Key。
+- **OpenAI API Key（必需）**：[获取地址](https://platform.openai.com/api-keys)
+  > ⚠️ **注意**：没有 OpenAI API Key 将无法使用本项目的 AI 翻译、例句生成和语音朗读功能。应用启动后会提示您输入 API Key。
 
 ### 安装
 
@@ -45,7 +45,7 @@ npm install
 创建 `.env` 文件：
 
 ```env
-VITE_ANTHROPIC_API_KEY=sk-ant-api03-xxxxx
+VITE_OPENAI_API_KEY=sk-proj-xxxxx
 ```
 
 **方式二：应用内设置**
@@ -93,16 +93,16 @@ vocab-tracker/
 
 | 服务 | 用途 |
 |------|------|
-| Claude AI (Haiku) | 翻译 & 例句生成 |
-| Google TTS | 发音服务 |
-| Web Speech API | 备用发音 |
+| OpenAI GPT-4o-mini | 翻译 & 例句生成 |
+| OpenAI TTS | 语音朗读 |
+| Web Speech API | 备用发音（无 API Key 时使用） |
 
 ### API 代理
 
-应用通过 Vite 开发服务器代理 Anthropic API 请求，避免浏览器 CORS 限制：
+应用通过 Vite 开发服务器代理 OpenAI API 请求，避免浏览器 CORS 限制：
 
 ```
-/api/anthropic/* → https://api.anthropic.com/*
+/api/openai/* → https://api.openai.com/*
 ```
 
 ## 🎨 使用指南
@@ -117,7 +117,7 @@ vocab-tracker/
 
 ### 发音播放
 
-点击任意单词即可播放发音。
+点击任意单词即可播放 OpenAI TTS 语音朗读。
 
 ### 重新生成例句
 
