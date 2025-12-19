@@ -4,6 +4,7 @@
 
 ![React](https://img.shields.io/badge/React-19.0-61DAFB?logo=react)
 ![Vite](https://img.shields.io/badge/Vite-7.3-646CFF?logo=vite)
+![Tailwind](https://img.shields.io/badge/Tailwind_CSS-4.0-38B2AC?logo=tailwind-css)
 ![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4o--mini-412991?logo=openai)
 
 ## ✨ 功能特性
@@ -86,6 +87,7 @@ vocab-tracker/
 |------|------|
 | React 19 | UI 框架 |
 | Vite 7 | 构建工具 |
+| Tailwind CSS 4 | 样式系统 |
 | Supabase | 云存储 & 认证 |
 | Space Grotesk | 字体 |
 

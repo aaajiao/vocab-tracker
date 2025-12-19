@@ -305,25 +305,27 @@ function AuthForm({ onAuth }) {
     };
 
     return (
-        <div className="container">
-            <div className="header" style={{ justifyContent: 'center' }}>
-                <div className="header-left">
-                    <div className="header-icon"><Icons.Book /></div>
-                    <div>
-                        <div className="header-title">词汇本</div>
-                        <div className="header-subtitle"><Icons.Cloud /> 云端同步版</div>
+        <div className="max-w-md mx-auto p-4 py-20">
+            <div className="flex items-center justify-center gap-3 mb-8">
+                <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-600 rounded-lg flex items-center justify-center text-white shadow-lg shadow-amber-500/30">
+                    <Icons.Book />
+                </div>
+                <div>
+                    <div className="text-xl font-bold text-slate-800 dark:text-slate-100">词汇本</div>
+                    <div className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                        <Icons.Cloud /> 云端同步版
                     </div>
                 </div>
             </div>
 
-            <div className="form-card" style={{ maxWidth: '400px', margin: '2rem auto' }}>
-                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', textAlign: 'center' }}>
+            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6 shadow-sm mb-6 max-w-sm mx-auto">
+                <h3 className="text-base font-semibold mb-4 text-center text-slate-800 dark:text-slate-100">
                     {isLogin ? '登录' : '注册'}
                 </h3>
 
                 <form onSubmit={handleSubmit}>
                     <input
-                        className="input"
+                        className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-slate-400 dark:focus:border-slate-500 mb-2 text-slate-800 dark:text-slate-100"
                         type="email"
                         placeholder="邮箱"
                         value={email}
@@ -331,7 +333,7 @@ function AuthForm({ onAuth }) {
                         required
                     />
                     <input
-                        className="input"
+                        className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-slate-400 dark:focus:border-slate-500 mb-2 text-slate-800 dark:text-slate-100"
                         type="password"
                         placeholder="密码"
                         value={password}
@@ -346,16 +348,16 @@ function AuthForm({ onAuth }) {
                         </div>
                     )}
 
-                    <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} disabled={loading}>
+                    <button className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 dark:bg-slate-100 dark:hover:bg-slate-200 dark:text-slate-900 text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed mt-2" disabled={loading}>
                         {loading ? '处理中...' : (isLogin ? '登录' : '注册')}
                     </button>
                 </form>
 
-                <div style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.875rem' }}>
-                    <span style={{ color: '#64748b' }}>{isLogin ? '没有账户？' : '已有账户？'}</span>
+                <div className="text-center mt-4 text-sm">
+                    <span className="text-slate-500 dark:text-slate-400">{isLogin ? '没有账户？' : '已有账户？'}</span>
                     <button
                         onClick={() => { setIsLogin(!isLogin); setError(''); }}
-                        style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontWeight: 500 }}
+                        className="bg-transparent border-none text-blue-600 hover:text-blue-700 font-medium cursor-pointer ml-1"
                     >
                         {isLogin ? '注册' : '登录'}
                     </button>
@@ -657,8 +659,12 @@ function App() {
     };
 
     const getCategoryClass = (cat) => {
-        const map = { daily: 'badge-daily', professional: 'badge-professional', formal: 'badge-formal' };
-        return map[cat] || '';
+        const map = {
+            daily: 'bg-green-50 text-green-600 dark:bg-green-500/10 dark:text-green-400',
+            professional: 'bg-purple-50 text-purple-600 dark:bg-purple-500/10 dark:text-purple-400',
+            formal: 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400'
+        };
+        return map[cat] || 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400';
     };
     const getCategoryLabel = (cat) => {
         const map = { daily: '日常', professional: '专业', formal: '正式' };
@@ -691,57 +697,53 @@ function App() {
     if (loading) return <div className="container" style={{ textAlign: 'center', paddingTop: '4rem', color: '#64748b' }}>Loading...</div>;
 
     return (
-        <div className="container">
+        <div className="max-w-xl mx-auto p-4 py-8">
             {/* Header */}
-            <div className="header">
-                <div className="header-left">
-                    <div className="header-icon"><Icons.Book /></div>
+            <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-600 rounded-lg flex items-center justify-center text-white shadow-lg shadow-amber-500/30">
+                        <Icons.Book />
+                    </div>
                     <div>
-                        <div className="header-title">词汇本</div>
-                        <div className="header-subtitle">
+                        <div className="text-xl font-bold text-slate-800 dark:text-slate-100">词汇本</div>
+                        <div className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1">
                             <Icons.Cloud /> 云端同步 {syncing && '· 同步中...'}
                         </div>
                     </div>
                 </div>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button className="btn btn-ghost" onClick={() => setShowSettings(!showSettings)}><Icons.Settings /></button>
+                <div className="flex gap-2">
+                    <button className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 rounded-lg transition-colors" onClick={() => setShowSettings(!showSettings)}><Icons.Settings /></button>
                     {words.length > 0 && (
-                        <button className="btn btn-ghost" onClick={exportWords}><Icons.Download /> 导出</button>
+                        <button className="flex items-center gap-2 px-3 py-2 text-sm text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" onClick={exportWords}><Icons.Download /> 导出</button>
                     )}
-                    <button className="btn btn-ghost" onClick={handleLogout} title="退出登录"><Icons.LogOut /></button>
+                    <button className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 rounded-lg transition-colors" onClick={handleLogout} title="退出登录"><Icons.LogOut /></button>
                 </div>
             </div>
 
             {/* API Key Warning - Show when no API key is set */}
             {!apiKey && (
-                <div className="form-card" style={{
-                    marginBottom: '1.5rem',
-                    background: '#fef2f2',
-                    borderColor: '#fecaca',
-                    border: '1px solid #fecaca'
-                }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                        <span style={{ fontSize: '1.25rem' }}>⚠️</span>
-                        <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: '#dc2626', margin: 0 }}>需要 OpenAI API Key</h3>
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+                    <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xl">⚠️</span>
+                        <h3 className="text-sm font-semibold text-red-600 m-0">需要 OpenAI API Key</h3>
                     </div>
-                    <p style={{ fontSize: '0.75rem', color: '#991b1b', marginBottom: '0.75rem', lineHeight: 1.5 }}>
+                    <p className="text-xs text-red-700 mb-3 leading-relaxed">
                         本应用使用 OpenAI 进行翻译、例句生成和语音朗读。请输入您的 OpenAI API Key 才能使用完整功能。
                         <br />
                         <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer"
-                            style={{ color: '#2563eb', textDecoration: 'underline' }}>
+                            className="text-blue-600 hover:underline">
                             → 获取 API Key
                         </a>
                     </p>
-                    <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '0.25rem', color: '#64748b' }}>OpenAI API Key</label>
+                    <label className="block text-xs text-slate-500 mb-1">OpenAI API Key</label>
                     <input
-                        className="input"
+                        className="w-full px-3 py-2 bg-white border border-red-200 rounded-lg text-sm outline-none focus:border-red-400 text-slate-800"
                         type="password"
                         placeholder="sk-proj-xxxxx"
                         value={apiKey}
                         onChange={(e) => setApiKey(e.target.value)}
-                        style={{ borderColor: '#fecaca' }}
                     />
-                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.25rem' }}>
+                    <div className="text-xs text-slate-400 mt-1">
                         Key 仅保存在本地浏览器中，不会上传到服务器。
                     </div>
                 </div>
@@ -749,131 +751,178 @@ function App() {
 
             {/* Settings Panel */}
             {showSettings && apiKey && (
-                <div className="settings-panel">
-                    <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>Settings</h3>
-                    <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '0.25rem', color: 'var(--text-tertiary)' }}>OpenAI API Key</label>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4 mb-6">
+                    <h3 className="text-sm font-semibold mb-2 text-slate-800 dark:text-slate-100">Settings</h3>
+                    <label className="block text-xs text-slate-500 mb-1">OpenAI API Key</label>
+                    <div className="flex gap-2">
                         <input
-                            className="input"
+                            className="flex-1 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-slate-400 dark:focus:border-slate-500 text-slate-800 dark:text-slate-100"
                             type="password"
                             placeholder="sk-proj-..."
                             value={apiKey}
                             onChange={(e) => setApiKey(e.target.value)}
-                            style={{ marginBottom: 0, flex: 1 }}
                         />
                         <button
-                            className="btn btn-ghost"
+                            className="flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"
                             onClick={() => {
                                 setApiKey('');
                                 localStorage.removeItem('vocab-api-key');
                                 localStorage.setItem('vocab-api-key-deleted', 'true');
                             }}
-                            style={{ color: '#dc2626', flexShrink: 0 }}
                             title="删除 API Key"
                         >
                             <Icons.Trash /> 删除
                         </button>
                     </div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-quaternary)', marginTop: '0.5rem' }}>Key is stored locally. 账户: {user?.email}</div>
+                    <div className="text-xs text-slate-400 mt-2">Key is stored locally. 账户: {user?.email}</div>
                 </div>
             )}
 
 
             {/* Stats */}
-            <div className="stats">
-                <div className="stat-card"><div className="stat-value">{stats.total}</div><div className="stat-label">总计</div></div>
-                <div className="stat-card"><div className="stat-value blue">{stats.en}</div><div className="stat-label">英语</div></div>
-                <div className="stat-card"><div className="stat-value green">{stats.de}</div><div className="stat-label">德语</div></div>
-                <div className="stat-card"><div className="stat-value amber">{stats.today}</div><div className="stat-label">今日</div></div>
+            {/* Stats */}
+            <div className="grid grid-cols-4 gap-3 mb-6">
+                <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
+                    <div className="text-2xl font-bold text-slate-800 dark:text-slate-100">{stats.total}</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">总计</div>
+                </div>
+                <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
+                    <div className="text-2xl font-bold text-blue-600">{stats.en}</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">英语</div>
+                </div>
+                <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
+                    <div className="text-2xl font-bold text-green-600">{stats.de}</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">德语</div>
+                </div>
+                <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
+                    <div className="text-2xl font-bold text-amber-600">{stats.today}</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">今日</div>
+                </div>
             </div>
 
             {/* Search */}
-            <div className="search-row">
-                <div className="search-box">
-                    <div className="search-icon"><Icons.Search /></div>
-                    <input className="search-input" placeholder="搜索单词..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+            {/* Search */}
+            <div className="flex gap-3 mb-6">
+                <div className="flex-1 relative">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></div>
+                    <input
+                        className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-slate-400 dark:focus:border-slate-500 text-slate-800 dark:text-slate-100 transition-colors"
+                        placeholder="搜索单词..."
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                    />
                 </div>
-                <button className="btn btn-primary" onClick={handleStartAdd}><Icons.Plus /> 添加</button>
+                <button
+                    className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 text-white rounded-xl hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200 transition-colors font-medium shadow-lg shadow-slate-900/10"
+                    onClick={handleStartAdd}
+                >
+                    <Icons.Plus /> 添加
+                </button>
             </div>
 
             {/* Tabs */}
-            <div className="tabs">
+            {/* Tabs */}
+            <div className="flex gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl mb-6">
                 {[{ id: 'all', label: '全部' }, { id: 'en', label: '🇬🇧 英语' }, { id: 'de', label: '🇩🇪 德语' }].map(t => (
-                    <button key={t.id} className={`tab ${activeTab === t.id ? 'active' : ''}`} onClick={() => setActiveTab(t.id)}>
-                        {t.label}<span className="tab-count">{t.id === 'all' ? stats.total : stats[t.id]}</span>
+                    <button
+                        key={t.id}
+                        className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === t.id
+                            ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm'
+                            : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                            }`}
+                        onClick={() => setActiveTab(t.id)}
+                    >
+                        {t.label}<span className="ml-1 opacity-60 text-xs">{t.id === 'all' ? stats.total : stats[t.id]}</span>
                     </button>
                 ))}
             </div>
 
             {/* Add Form */}
             {isAdding && (
-                <div className="form-card">
-                    <div className="lang-toggle">
-                        <button className={`lang-btn ${newWord.language === 'en' ? 'en' : 'inactive'}`} onClick={() => setNewWord(p => ({ ...p, language: 'en', word: '', meaning: '', example: '', exampleCn: '', category: '' }))}>🇬🇧 英语</button>
-                        <button className={`lang-btn ${newWord.language === 'de' ? 'de' : 'inactive'}`} onClick={() => setNewWord(p => ({ ...p, language: 'de', word: '', meaning: '', example: '', exampleCn: '', category: '' }))}>🇩🇪 德语</button>
+                <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 mb-6 shadow-sm">
+                    <div className="flex gap-2 mb-4 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-lg w-fit">
+                        <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${newWord.language === 'en' ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`} onClick={() => setNewWord(p => ({ ...p, language: 'en', word: '', meaning: '', example: '', exampleCn: '', category: '' }))}>🇬🇧 英语</button>
+                        <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${newWord.language === 'de' ? 'bg-white dark:bg-slate-600 text-green-600 dark:text-green-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`} onClick={() => setNewWord(p => ({ ...p, language: 'de', word: '', meaning: '', example: '', exampleCn: '', category: '' }))}>🇩🇪 德语</button>
                     </div>
-                    <input ref={inputRef} className="input" placeholder="输入单词或短语" value={newWord.word} onChange={e => setNewWord(p => ({ ...p, word: e.target.value }))} />
+                    <input
+                        ref={inputRef}
+                        className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-slate-400 dark:focus:border-slate-500 mb-2 text-slate-800 dark:text-slate-100 font-medium"
+                        placeholder="输入单词或短语"
+                        value={newWord.word}
+                        onChange={e => setNewWord(p => ({ ...p, word: e.target.value }))}
+                    />
                     {aiLoading ? (
                         <>
-                            <div className="ai-loading"><Icons.Sparkles /> GPT 分析中...</div>
-                            <div className="ai-loading" style={{ height: '60px' }}></div>
+                            <div className="h-10 bg-gradient-to-r from-slate-100 via-slate-50 to-slate-100 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 animate-pulse rounded-lg flex items-center px-3 text-sm text-slate-400 gap-2 mb-2"><Icons.Sparkles /> GPT 分析中...</div>
+                            <div className="h-16 bg-gradient-to-r from-slate-100 via-slate-50 to-slate-100 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 animate-pulse rounded-lg mb-2"></div>
                         </>
                     ) : (
                         <>
-                            <div className="input-wrapper">
-                                <input className="input" style={{ marginBottom: 0 }} placeholder="中文翻译" value={newWord.meaning} onChange={e => setNewWord(p => ({ ...p, meaning: e.target.value }))} />
-                                {newWord.meaning && <div className="input-icon"><Icons.Sparkles /></div>}
+                            <div className="relative mb-2">
+                                <input
+                                    className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-slate-400 dark:focus:border-slate-500 text-slate-800 dark:text-slate-100"
+                                    placeholder="中文翻译"
+                                    value={newWord.meaning}
+                                    onChange={e => setNewWord(p => ({ ...p, meaning: e.target.value }))}
+                                />
+                                {newWord.meaning && <div className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-500"><Icons.Sparkles /></div>}
                             </div>
                             {newWord.example && (
-                                <div className="example-preview">
-                                    <div className="example-text">{newWord.example}</div>
-                                    <div className="example-cn">{newWord.exampleCn}</div>
+                                <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 mb-4">
+                                    <div className="text-sm text-slate-700 dark:text-slate-300 mb-1">{newWord.example}</div>
+                                    <div className="text-xs text-slate-500 dark:text-slate-400">{newWord.exampleCn}</div>
                                 </div>
                             )}
                         </>
                     )}
-                    <div className="form-actions">
-                        <button className="btn btn-primary" onClick={addWord} disabled={!newWord.word.trim() || !newWord.meaning.trim() || aiLoading || syncing}>
+                    <div className="flex gap-2">
+                        <button className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed" onClick={addWord} disabled={!newWord.word.trim() || !newWord.meaning.trim() || aiLoading || syncing}>
                             {syncing ? '保存中...' : '保存'}
                         </button>
-                        <button className="btn btn-ghost" onClick={() => { setIsAdding(false); setNewWord({ word: '', meaning: '', language: 'en', example: '', exampleCn: '', category: '' }); }}>取消</button>
+                        <button className="px-4 py-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors font-medium" onClick={() => { setIsAdding(false); setNewWord({ word: '', meaning: '', language: 'en', example: '', exampleCn: '', category: '' }); }}>取消</button>
                     </div>
                 </div>
             )}
 
             {/* Word List */}
             {Object.keys(groupedByDate).length === 0 ? (
-                <div className="empty">
-                    <div className="empty-icon">📚</div>
-                    <div className="empty-text">还没有单词</div>
-                    <div className="empty-hint">开始记录你每天遇到的新单词吧</div>
+                <div className="text-center py-16">
+                    <div className="text-6xl text-slate-200 dark:text-slate-700 mb-4">📚</div>
+                    <div className="text-slate-500 font-medium mb-1">还没有单词</div>
+                    <div className="text-sm text-slate-400">开始记录你每天遇到的新单词吧</div>
                 </div>
             ) : (
                 Object.entries(groupedByDate).sort(([a], [b]) => b.localeCompare(a)).map(([date, dateWords]) => (
-                    <div key={date} className="date-group">
-                        <div className="date-header"><Icons.Calendar /> {formatDate(date)} <span className="date-count">({dateWords.length})</span></div>
+                    <div key={date} className="mb-8">
+                        <div className="flex items-center gap-2 mb-3 text-sm font-medium text-slate-500 dark:text-slate-400">
+                            <Icons.Calendar /> {formatDate(date)} <span className="text-xs opacity-60">({dateWords.length})</span>
+                        </div>
                         {dateWords.sort((a, b) => b.timestamp - a.timestamp).map(word => (
-                            <div key={word.id} className="word-card">
-                                <div className="word-header">
-                                    <div className="word-content">
-                                        <div className="word-badges">
-                                            <span className={`badge ${word.language === 'en' ? 'badge-en' : 'badge-de'}`}>{word.language === 'en' ? '🇬🇧' : '🇩🇪'}</span>
-                                            {word.category && <span className={`badge ${getCategoryClass(word.category)}`}>{getCategoryLabel(word.category)}</span>}
-                                            <span className="word-text" onClick={() => speakWord(word.word, word.language, setSpeakingId, word.id, apiKey)}>
+                            <div key={word.id} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 mb-3 hover:border-blue-300 dark:hover:border-blue-700 transition-all group shadow-sm">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="flex-1">
+                                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${word.language === 'en' ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400' : 'bg-green-50 text-green-600 dark:bg-green-900/20 dark:text-green-400'}`}>
+                                                {word.language === 'en' ? '🇬🇧' : '🇩🇪'}
+                                            </span>
+                                            {word.category && <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getCategoryClass(word.category)}`}>{getCategoryLabel(word.category)}</span>}
+                                            <span className="text-lg font-bold text-slate-800 dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer inline-flex items-center gap-1 transition-colors" onClick={() => speakWord(word.word, word.language, setSpeakingId, word.id, apiKey)}>
                                                 {word.word}
-                                                <button className={`speaker-btn ${speakingId === word.id ? 'speaking' : ''}`}><Icons.Speaker playing={speakingId === word.id} /></button>
+                                                <button className={`p-1 rounded-full text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors ${speakingId === word.id ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/30' : ''}`}>
+                                                    <Icons.Speaker playing={speakingId === word.id} />
+                                                </button>
                                             </span>
                                         </div>
-                                        <div className="word-meaning">{word.meaning}</div>
+                                        <div className="text-sm text-slate-600 dark:text-slate-300 mb-2 font-medium">{word.meaning}</div>
                                         {word.example && (
-                                            <div className="word-example">
-                                                <div className="word-example-text">{word.example}</div>
-                                                <div className="word-example-cn">{word.exampleCn}</div>
-                                                <button className={`regen-btn ${regeneratingId === word.id ? 'loading' : ''}`} onClick={() => handleRegenerate(word.id)} title="重新生成例句"><Icons.Refresh /></button>
+                                            <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 relative group/example">
+                                                <div className="text-sm text-slate-700 dark:text-slate-300 mb-0.5 pr-6">{word.example}</div>
+                                                <div className="text-xs text-slate-500 dark:text-slate-400">{word.exampleCn}</div>
+                                                <button className={`absolute top-2 right-2 p-1.5 rounded text-slate-400 opacity-0 group-hover/example:opacity-100 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-all ${regeneratingId === word.id ? 'opacity-100 animate-spin text-amber-600' : ''}`} onClick={() => handleRegenerate(word.id)} title="重新生成例句"><Icons.Refresh /></button>
                                             </div>
                                         )}
                                     </div>
-                                    <button className="delete-btn" onClick={() => deleteWord(word.id)}><Icons.Trash /></button>
+                                    <button className="p-2 rounded-lg text-slate-400 opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 transition-all" onClick={() => deleteWord(word.id)}><Icons.Trash /></button>
                                 </div>
                             </div>
                         ))}
@@ -881,7 +930,9 @@ function App() {
                 ))
             )}
 
-            <div className="footer"><Icons.Cloud /> 数据已同步到云端 · 点击单词听发音</div>
+            <div className="mt-8 text-center text-xs text-slate-400 flex items-center justify-center gap-1 pb-8">
+                <Icons.Cloud /> 数据已同步到云端 · 点击单词听发音
+            </div>
         </div>
     );
 }
