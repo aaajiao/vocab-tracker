@@ -78,7 +78,7 @@ export interface VirtualWordListProps {
     handleRegenerate: (wordId: string) => void;
     regeneratingId: string | null;
     saveSentence: (sentenceObj: SentenceInput) => Promise<void>;
-    unsaveSentence: (id: string) => Promise<void>;
+    unsaveSentence: (id: string) => Promise<SavedSentence | null>;
     isSentenceSaved: (sentence: string) => boolean;
     getSavedSentenceId: (sentence: string) => string | null;
     savingId: string | null;

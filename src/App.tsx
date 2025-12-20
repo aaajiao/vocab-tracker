@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import type { Word, SentenceData } from './types';
+import type { Word, SentenceData, SavedSentence } from './types';
 
 // Components
 import { Icons } from './components/Icons';
@@ -9,6 +9,7 @@ import SettingsPanel from './components/SettingsPanel';
 import UndoToast from './components/UndoToast';
 import ToastContainer from './components/ToastContainer';
 import SwipeableSentenceCard from './components/SwipeableSentenceCard';
+import SentenceUndoToast from './components/SentenceUndoToast';
 
 // Services
 import { getAIContent, detectAndGetContent, regenerateExample, generateCombinedSentence } from './services/openai';
@@ -45,7 +46,7 @@ function App() {
 
     const {
         savedSentences, savingId,
-        saveSentence, unsaveSentence, isSentenceSaved, getSavedSentenceId
+        saveSentence, unsaveSentence, restoreSentence, isSentenceSaved, getSavedSentenceId
     } = useSentences({ userId: user?.id, showToast });
 
     // Local state
@@ -72,6 +73,7 @@ function App() {
     const [sentenceData, setSentenceData] = useState<SentenceData | null>(null);
     const [sentenceLoading, setSentenceLoading] = useState(false);
     const [deletedItem, setDeletedItem] = useState<Word | null>(null);
+    const [deletedSentence, setDeletedSentence] = useState<SavedSentence | null>(null);
 
     const inputRef = useRef<HTMLInputElement>(null);
     const aiTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -194,6 +196,23 @@ function App() {
 
     const handleUndoDismiss = useCallback(() => {
         setDeletedItem(null);
+    }, []);
+
+    const handleDeleteSentence = useCallback(async (id: string) => {
+        const deleted = await unsaveSentence(id);
+        if (deleted) {
+            setDeletedSentence(deleted);
+        }
+    }, [unsaveSentence]);
+
+    const handleUndoSentence = useCallback(async () => {
+        if (!deletedSentence) return;
+        await restoreSentence(deletedSentence);
+        setDeletedSentence(null);
+    }, [deletedSentence, restoreSentence]);
+
+    const handleSentenceUndoDismiss = useCallback(() => {
+        setDeletedSentence(null);
     }, []);
 
     // Computed values with debounced search
@@ -624,7 +643,7 @@ function App() {
                                 <SwipeableSentenceCard
                                     key={s.id}
                                     sentence={s}
-                                    onDelete={() => unsaveSentence(s.id)}
+                                    onDelete={() => handleDeleteSentence(s.id)}
                                     onSpeak={() => speakWord(s.sentence, s.language, setSpeakingId, s.id, apiKey, (key) => setCachedKeys(prev => new Set(prev).add(key)))}
                                     speakingId={speakingId}
                                 />
@@ -665,12 +684,21 @@ function App() {
                 <Icons.Cloud /> 数据已同步到云端 · 点击单词听发音
             </div>
 
-            {/* Undo Toast */}
+            {/* Undo Toast for Words */}
             <UndoToast
                 deletedItem={deletedItem}
                 onUndo={handleUndo}
                 onDismiss={handleUndoDismiss}
             />
+
+            {/* Undo Toast for Sentences - reuse same component concept inline */}
+            {deletedSentence && (
+                <SentenceUndoToast
+                    sentence={deletedSentence.sentence}
+                    onUndo={handleUndoSentence}
+                    onDismiss={handleSentenceUndoDismiss}
+                />
+            )}
         </div>
     );
 }
