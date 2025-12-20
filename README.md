@@ -108,6 +108,10 @@ This project requires a Supabase backend. Please refer to [SUPABASE_SETUP.md](./
 
 ### 📝 Changelog
 
+#### v1.4.3 (2025-12-21)
+- **📦 Constants Extraction**: Centralized magic values (timing, categories, storage keys) into `constants.ts`.
+- **💀 Skeleton Loading**: Professional loading screen with animated placeholders instead of "Loading..." text.
+
 #### v1.4.2 (2025-12-21)
 - **↩️ Unified Undo System**: Combined word and sentence undo into a single `useUndo` hook + generic `UndoToast`.
 - **✨ Sentence Undo**: Now can undo when removing saved sentences.
@@ -245,6 +249,10 @@ vocab-tracker/
 本项目需要 Supabase 后端支持。详细设置请参阅 [SUPABASE_SETUP.md](./SUPABASE_SETUP.md)。
 
 ### 📝 更新日志 (Changelog)
+
+#### v1.4.3 (2025-12-21)
+- **📦 常量提取**: 将魔法值（时间、分类、存储键）集中到 `constants.ts`。
+- **💀 骨架屏加载**: 加载时显示动画占位符，替代简单的 "Loading..." 文本。
 
 #### v1.4.2 (2025-12-21)
 - **↩️ 统一撤销系统**: 将单词和句子的撤销合并为单一的 `useUndo` Hook + 通用 `UndoToast`。

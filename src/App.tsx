@@ -9,6 +9,10 @@ import SettingsPanel from './components/SettingsPanel';
 import UndoToast from './components/UndoToast';
 import ToastContainer from './components/ToastContainer';
 import SwipeableSentenceCard from './components/SwipeableSentenceCard';
+import { PageSkeleton } from './components/Skeleton';
+
+// Constants
+import { DEBOUNCE_DELAY, AI_TYPING_DELAY, STORAGE_KEYS, CATEGORY_CONFIG } from './constants';
 
 // Services
 import { getAIContent, detectAndGetContent, regenerateExample, generateCombinedSentence } from './services/openai';
@@ -53,7 +57,7 @@ function App() {
     // Local state
     const [activeTab, setActiveTab] = useState<'all' | 'en' | 'de' | 'saved'>('all');
     const [searchQuery, setSearchQuery] = useState('');
-    const debouncedSearchQuery = useDebounce(searchQuery, 300);
+    const debouncedSearchQuery = useDebounce(searchQuery, DEBOUNCE_DELAY);
     const [isAdding, setIsAdding] = useState(false);
     const [newWord, setNewWord] = useState<NewWord>({ word: '', meaning: '', language: 'en', example: '', exampleCn: '', category: '' });
     const [aiLoading, setAiLoading] = useState(false);
@@ -61,8 +65,8 @@ function App() {
     const [cachedKeys, setCachedKeys] = useState<Set<string>>(new Set());
     const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
     const [apiKey, setApiKey] = useState<string>(() => {
-        const savedKey = localStorage.getItem('vocab-api-key');
-        const wasDeleted = localStorage.getItem('vocab-api-key-deleted');
+        const savedKey = localStorage.getItem(STORAGE_KEYS.API_KEY);
+        const wasDeleted = localStorage.getItem(STORAGE_KEYS.API_KEY_DELETED);
         if (savedKey) return savedKey;
         if (wasDeleted) return '';
         return import.meta.env.VITE_OPENAI_API_KEY || '';
@@ -80,12 +84,11 @@ function App() {
 
     const loading = authLoading || wordsLoading;
 
-    // Save API Key
     useEffect(() => {
         if (!loading) {
             if (apiKey) {
-                localStorage.setItem('vocab-api-key', apiKey);
-                localStorage.removeItem('vocab-api-key-deleted');
+                localStorage.setItem(STORAGE_KEYS.API_KEY, apiKey);
+                localStorage.removeItem(STORAGE_KEYS.API_KEY_DELETED);
             }
         }
     }, [apiKey, loading]);
@@ -120,7 +123,7 @@ function App() {
                 }
                 setAiLoading(false);
             }
-        }, 800);
+        }, AI_TYPING_DELAY);
         return () => { if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current); };
     }, [newWord.word, newWord.language, apiKey]);
 
@@ -224,17 +227,11 @@ function App() {
     }, []);
 
     const getCategoryClass = useCallback((cat: string) => {
-        const map: Record<string, string> = {
-            daily: 'bg-green-50 text-green-600 dark:bg-green-500/10 dark:text-green-400',
-            professional: 'bg-purple-50 text-purple-600 dark:bg-purple-500/10 dark:text-purple-400',
-            formal: 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400'
-        };
-        return map[cat] || 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400';
+        return CATEGORY_CONFIG[cat as keyof typeof CATEGORY_CONFIG]?.style || CATEGORY_CONFIG[''].style;
     }, []);
 
     const getCategoryLabel = useCallback((cat: string) => {
-        const map: Record<string, string> = { daily: '日常', professional: '专业', formal: '正式' };
-        return map[cat] || '';
+        return CATEGORY_CONFIG[cat as keyof typeof CATEGORY_CONFIG]?.label || '';
     }, []);
 
     const exportWords = useCallback(() => {
@@ -289,7 +286,7 @@ function App() {
         return <AuthForm onAuth={() => { }} />;
     }
 
-    if (loading) return <div className="container" style={{ textAlign: 'center', paddingTop: '4rem', color: '#64748b' }}>Loading...</div>;
+    if (loading) return <PageSkeleton />;
 
     return (
         <div className="max-w-xl mx-auto p-4 py-8">
