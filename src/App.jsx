@@ -17,7 +17,8 @@ const Icons = {
     LogOut: () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" x2="9" y1="12" y2="12" /></svg>,
     Cloud: () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" /></svg>,
     Moon: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg>,
-    Sun: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>
+    Sun: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>,
+    Star: ({ filled }) => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
 };
 
 // Swipeable Card Component - touch swipe on mobile, hover delete on desktop
@@ -98,7 +99,8 @@ function SwipeableCard({ children, onDelete, className }) {
 function VirtualWordList({
     groupedByDate, formatDate, deleteWord, speakWord, setSpeakingId,
     speakingId, apiKey, setCachedKeys, cachedKeys, getCategoryClass,
-    getCategoryLabel, handleRegenerate, regeneratingId
+    getCategoryLabel, handleRegenerate, regeneratingId,
+    saveSentence, unsaveSentence, isSentenceSaved, getSavedSentenceId, savingId
 }) {
     const listRef = useRef(null);
 
@@ -183,9 +185,32 @@ function VirtualWordList({
                                 <div className="text-sm text-slate-600 dark:text-slate-300 mb-2 font-medium">{word.meaning}</div>
                                 {word.example && (
                                     <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 relative group/example">
-                                        <div className="text-sm text-slate-700 dark:text-slate-300 mb-0.5 pr-6">{word.example}</div>
+                                        <div className="text-sm text-slate-700 dark:text-slate-300 mb-0.5 pr-14">{word.example}</div>
                                         <div className="text-xs text-slate-500 dark:text-slate-400">{word.exampleCn}</div>
-                                        <button className={`absolute top-2 right-2 p-2 rounded-lg text-slate-300 dark:text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 active:scale-90 transition-all ${regeneratingId === word.id ? 'animate-spin text-amber-600' : ''}`} onClick={() => handleRegenerate(word.id)} title="重新生成例句"><Icons.Refresh /></button>
+                                        <div className="absolute top-2 right-2 flex gap-1">
+                                            <button
+                                                className={`p-2 rounded-lg active:scale-90 transition-all ${isSentenceSaved(word.example) ? 'text-amber-500' : 'text-slate-300 dark:text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30'}`}
+                                                onClick={() => {
+                                                    if (isSentenceSaved(word.example)) {
+                                                        unsaveSentence(getSavedSentenceId(word.example));
+                                                    } else {
+                                                        saveSentence({
+                                                            sentence: word.example,
+                                                            sentenceCn: word.exampleCn,
+                                                            language: word.language,
+                                                            scene: null,
+                                                            sourceType: 'word',
+                                                            sourceWords: [word.word]
+                                                        });
+                                                    }
+                                                }}
+                                                disabled={savingId === word.example}
+                                                title={isSentenceSaved(word.example) ? '取消收藏' : '收藏例句'}
+                                            >
+                                                <Icons.Star filled={isSentenceSaved(word.example)} />
+                                            </button>
+                                            <button className={`p-2 rounded-lg text-slate-300 dark:text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 active:scale-90 transition-all ${regeneratingId === word.id ? 'animate-spin text-amber-600' : ''}`} onClick={() => handleRegenerate(word.id)} title="重新生成例句"><Icons.Refresh /></button>
+                                        </div>
                                     </div>
                                 )}
                             </SwipeableCard>
@@ -692,6 +717,9 @@ function App() {
     const [showSentence, setShowSentence] = useState(false);
     const [sentenceData, setSentenceData] = useState(null); // { words: [...], sentence: '', sentenceCn: '' }
     const [sentenceLoading, setSentenceLoading] = useState(false);
+    // Saved sentences state
+    const [savedSentences, setSavedSentences] = useState([]);
+    const [savingId, setSavingId] = useState(null);
 
     const inputRef = useRef(null);
     const aiTimeoutRef = useRef(null);
@@ -765,7 +793,63 @@ function App() {
         const savedKey = localStorage.getItem('vocab-api-key');
         if (savedKey) setApiKey(savedKey);
 
+        // Load saved sentences
+        await loadSavedSentences(userId);
+
         setLoading(false);
+    };
+
+    // Load saved sentences from Supabase
+    const loadSavedSentences = async (userId) => {
+        const { data, error } = await supabase
+            .from('saved_sentences')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false });
+
+        if (!error) {
+            setSavedSentences(data || []);
+        }
+    };
+
+    // Save a sentence to collection
+    const saveSentence = async (sentenceObj) => {
+        if (!user) return;
+        setSavingId(sentenceObj.sentence);
+
+        const { data, error } = await supabase.from('saved_sentences').insert({
+            user_id: user.id,
+            sentence: sentenceObj.sentence,
+            sentence_cn: sentenceObj.sentenceCn,
+            language: sentenceObj.language,
+            scene: sentenceObj.scene || null,
+            source_type: sentenceObj.sourceType,
+            source_words: sentenceObj.sourceWords || []
+        }).select();
+
+        if (!error && data) {
+            setSavedSentences(prev => [data[0], ...prev]);
+        }
+        setSavingId(null);
+    };
+
+    // Remove a sentence from collection
+    const unsaveSentence = async (id) => {
+        const { error } = await supabase.from('saved_sentences').delete().eq('id', id);
+        if (!error) {
+            setSavedSentences(prev => prev.filter(s => s.id !== id));
+        }
+    };
+
+    // Check if a sentence is already saved
+    const isSentenceSaved = (sentence) => {
+        return savedSentences.some(s => s.sentence === sentence);
+    };
+
+    // Get saved sentence ID by sentence text
+    const getSavedSentenceId = (sentence) => {
+        const found = savedSentences.find(s => s.sentence === sentence);
+        return found ? found.id : null;
     };
 
     // Migrate localStorage data to Supabase
@@ -1002,7 +1086,8 @@ function App() {
         total: words.length,
         en: words.filter(w => w.language === 'en').length,
         de: words.filter(w => w.language === 'de').length,
-        today: words.filter(w => w.date === new Date().toLocaleDateString('sv-SE')).length
+        today: words.filter(w => w.date === new Date().toLocaleDateString('sv-SE')).length,
+        saved: savedSentences.length
     };
 
     // Handle sentence generation
@@ -1220,7 +1305,7 @@ function App() {
             {/* Tabs */}
             {/* Tabs */}
             <div className="flex gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl mb-6">
-                {[{ id: 'all', label: '全部' }, { id: 'en', label: '🇬🇧 英语' }, { id: 'de', label: '🇩🇪 德语' }].map(t => (
+                {[{ id: 'all', label: '全部' }, { id: 'en', label: '🇬🇧 英语' }, { id: 'de', label: '🇩🇪 德语' }, { id: 'saved', label: '⭐ 收藏' }].map(t => (
                     <button
                         key={t.id}
                         className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === t.id
@@ -1304,6 +1389,29 @@ function App() {
                                             <Icons.Speaker playing={speakingId === 'sentence'} cached={false} /> 朗读
                                         </button>
                                         <button
+                                            className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg active:scale-95 transition-all text-sm font-medium ${isSentenceSaved(sentenceData.sentence)
+                                                ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400'
+                                                : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                                                }`}
+                                            onClick={() => {
+                                                if (isSentenceSaved(sentenceData.sentence)) {
+                                                    unsaveSentence(getSavedSentenceId(sentenceData.sentence));
+                                                } else {
+                                                    saveSentence({
+                                                        sentence: sentenceData.sentence,
+                                                        sentenceCn: sentenceData.sentenceCn,
+                                                        language: activeTab,
+                                                        scene: sentenceData.scene,
+                                                        sourceType: 'combined',
+                                                        sourceWords: sentenceData.words.map(w => w.word)
+                                                    });
+                                                }
+                                            }}
+                                            disabled={savingId === sentenceData.sentence}
+                                        >
+                                            <Icons.Star filled={isSentenceSaved(sentenceData.sentence)} /> {isSentenceSaved(sentenceData.sentence) ? '已收藏' : '收藏'}
+                                        </button>
+                                        <button
                                             className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/50 active:scale-95 transition-all text-sm font-medium"
                                             onClick={handleGenerateSentence}
                                         >
@@ -1367,7 +1475,61 @@ function App() {
             )}
 
             {/* Word List */}
-            {Object.keys(groupedByDate).length === 0 ? (
+            {activeTab === 'saved' ? (
+                /* Saved Sentences List */
+                <div>
+                    {savedSentences.length === 0 ? (
+                        <div className="text-center py-16">
+                            <div className="text-6xl text-slate-200 dark:text-slate-700 mb-4">⭐</div>
+                            <div className="text-slate-500 font-medium mb-1">还没有收藏的句子</div>
+                            <div className="text-sm text-slate-400">收藏你喜欢的例句和组合造句吧</div>
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            {savedSentences.map(s => (
+                                <div key={s.id} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 shadow-sm">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${s.language === 'en' ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400' : 'bg-green-50 text-green-600 dark:bg-green-900/20 dark:text-green-400'}`}>
+                                                {s.language === 'en' ? '🇬🇧' : '🇩🇪'}
+                                            </span>
+                                            {s.scene && (
+                                                <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                                                    📍 {s.scene}
+                                                </span>
+                                            )}
+                                            <span className="text-xs text-slate-400">{s.source_type === 'combined' ? '组合造句' : '单词例句'}</span>
+                                        </div>
+                                    </div>
+                                    <div className="text-base text-slate-800 dark:text-slate-200 mb-1 leading-relaxed">{s.sentence}</div>
+                                    <div className="text-sm text-slate-500 dark:text-slate-400 mb-2">{s.sentence_cn}</div>
+                                    {s.source_words && s.source_words.length > 0 && (
+                                        <div className="flex flex-wrap gap-1.5 mb-2">
+                                            {s.source_words.map((w, i) => (
+                                                <span key={i} className="text-xs px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-full">{w}</span>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <div className="flex gap-2">
+                                        <button
+                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 active:scale-95 transition-all text-sm"
+                                            onClick={() => speakWord(s.sentence, s.language, setSpeakingId, s.id, apiKey, (key) => setCachedKeys(prev => new Set(prev).add(key)))}
+                                        >
+                                            <Icons.Speaker playing={speakingId === s.id} cached={false} /> 朗读
+                                        </button>
+                                        <button
+                                            className="flex items-center gap-1.5 px-3 py-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg active:scale-95 transition-all text-sm"
+                                            onClick={() => unsaveSentence(s.id)}
+                                        >
+                                            <Icons.Trash /> 移除
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            ) : Object.keys(groupedByDate).length === 0 ? (
                 <div className="text-center py-16">
                     <div className="text-6xl text-slate-200 dark:text-slate-700 mb-4">📚</div>
                     <div className="text-slate-500 font-medium mb-1">还没有单词</div>
@@ -1388,6 +1550,11 @@ function App() {
                     getCategoryLabel={getCategoryLabel}
                     handleRegenerate={handleRegenerate}
                     regeneratingId={regeneratingId}
+                    saveSentence={saveSentence}
+                    unsaveSentence={unsaveSentence}
+                    isSentenceSaved={isSentenceSaved}
+                    getSavedSentenceId={getSavedSentenceId}
+                    savingId={savingId}
                 />
             )}
 
