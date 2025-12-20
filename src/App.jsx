@@ -1339,7 +1339,7 @@ function App() {
             </div>
 
             {/* Sentence Generation Panel */}
-            {activeTab !== 'all' && stats[activeTab] >= 2 && (
+            {(activeTab === 'en' || activeTab === 'de') && stats[activeTab] >= 2 && (
                 <div className="mb-6">
                     {!showSentence ? (
                         <button
