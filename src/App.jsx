@@ -337,6 +337,60 @@ Respond in this exact JSON format only:
     }
 }
 
+// Generate combined sentence using multiple words
+async function generateCombinedSentence(selectedWords, language, apiKey) {
+    try {
+        const langName = language === 'en' ? 'English' : 'German';
+        const wordList = selectedWords.map(w => {
+            const cat = w.category ? ` [${w.category}]` : '';
+            return `"${w.word}" (${w.meaning})${cat}`;
+        }).join(', ');
+
+        const response = await fetch("/api/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model: "gpt-4o-mini",
+                max_tokens: 400,
+                messages: [
+                    { role: "system", content: "You are a language learning assistant. Always respond with valid JSON only." },
+                    {
+                        role: "user",
+                        content: `Create a natural, grammatically correct ${langName} sentence that uses ALL of these words/phrases: ${wordList}
+
+Requirements:
+- The sentence must use each word correctly according to its meaning
+- The sentence should be natural and make logical sense
+- Keep the sentence concise but meaningful
+- Choose an appropriate scene/context based on the word categories (daily, professional, formal)
+
+Respond in this exact JSON format only:
+{"scene": "场景名称（如：日常对话/职场交流/正式写作/学术讨论等，用中文）", "sentence": "The ${langName} sentence", "sentenceCn": "中文翻译"}`
+                    }
+                ]
+            })
+        });
+
+        const data = await response.json();
+        if (data.error) {
+            console.error('API Error', data.error);
+            return null;
+        }
+
+        if (data.choices && data.choices[0] && data.choices[0].message) {
+            const jsonStr = data.choices[0].message.content.trim().replace(/```json\n?|\n?```/g, '').trim();
+            return JSON.parse(jsonStr);
+        }
+        return null;
+    } catch (e) {
+        console.error('Generate sentence error:', e);
+        return null;
+    }
+}
+
 // Audio Cache to save bandwidth and make repeated plays instant
 const audioCache = new Map();
 
@@ -634,6 +688,10 @@ function App() {
     });
     const [showPasswordUpdate, setShowPasswordUpdate] = useState(false);
     const [newPassword, setNewPassword] = useState('');
+    // Sentence generation state
+    const [showSentence, setShowSentence] = useState(false);
+    const [sentenceData, setSentenceData] = useState(null); // { words: [...], sentence: '', sentenceCn: '' }
+    const [sentenceLoading, setSentenceLoading] = useState(false);
 
     const inputRef = useRef(null);
     const aiTimeoutRef = useRef(null);
@@ -947,6 +1005,37 @@ function App() {
         today: words.filter(w => w.date === new Date().toLocaleDateString('sv-SE')).length
     };
 
+    // Handle sentence generation
+    const handleGenerateSentence = async () => {
+        if (!apiKey || activeTab === 'all') return;
+
+        const langWords = words.filter(w => w.language === activeTab);
+        if (langWords.length < 2) return;
+
+        setSentenceLoading(true);
+        setShowSentence(true);
+
+        // Randomly select 2-4 words
+        const count = Math.min(langWords.length, Math.floor(Math.random() * 3) + 2); // 2-4 words
+        const shuffled = [...langWords].sort(() => Math.random() - 0.5);
+        const selectedWords = shuffled.slice(0, count);
+
+        const result = await generateCombinedSentence(selectedWords, activeTab, apiKey);
+
+        if (result) {
+            setSentenceData({
+                words: selectedWords,
+                scene: result.scene || '',
+                sentence: result.sentence,
+                sentenceCn: result.sentenceCn
+            });
+        } else {
+            setSentenceData(null);
+        }
+
+        setSentenceLoading(false);
+    };
+
     // Show auth form if not logged in
     if (!user && !loading) {
         return <AuthForm onAuth={setUser} />;
@@ -1138,12 +1227,97 @@ function App() {
                             ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm'
                             : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
                             }`}
-                        onClick={() => setActiveTab(t.id)}
+                        onClick={() => { setActiveTab(t.id); setShowSentence(false); setSentenceData(null); }}
                     >
                         {t.label}<span className="ml-1 opacity-60 text-xs">{t.id === 'all' ? stats.total : stats[t.id]}</span>
                     </button>
                 ))}
             </div>
+
+            {/* Sentence Generation Panel */}
+            {activeTab !== 'all' && stats[activeTab] >= 2 && (
+                <div className="mb-6">
+                    {!showSentence ? (
+                        <button
+                            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 rounded-xl hover:from-amber-100 hover:to-orange-100 dark:hover:from-amber-900/30 dark:hover:to-orange-900/30 active:scale-[0.98] transition-all font-medium"
+                            onClick={handleGenerateSentence}
+                            disabled={!apiKey}
+                        >
+                            <Icons.Sparkles /> 组合造句
+                        </button>
+                    ) : (
+                        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 shadow-sm">
+                            <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+                                    <Icons.Sparkles /> 组合造句
+                                </div>
+                                <button
+                                    className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-all"
+                                    onClick={() => { setShowSentence(false); setSentenceData(null); }}
+                                >
+                                    ✕
+                                </button>
+                            </div>
+
+                            {sentenceLoading ? (
+                                <div className="space-y-3">
+                                    <div className="h-8 bg-gradient-to-r from-slate-100 via-slate-50 to-slate-100 dark:from-slate-700 dark:via-slate-600 dark:to-slate-700 animate-pulse rounded-lg"></div>
+                                    <div className="h-16 bg-gradient-to-r from-slate-100 via-slate-50 to-slate-100 dark:from-slate-700 dark:via-slate-600 dark:to-slate-700 animate-pulse rounded-lg"></div>
+                                </div>
+                            ) : sentenceData ? (
+                                <>
+                                    {/* Scene label */}
+                                    {sentenceData.scene && (
+                                        <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 mb-2">
+                                            <span>📍</span>
+                                            <span className="font-medium">{sentenceData.scene}</span>
+                                        </div>
+                                    )}
+
+                                    {/* Selected words */}
+                                    <div className="flex flex-wrap gap-2 mb-3">
+                                        {sentenceData.words.map((w, i) => (
+                                            <span
+                                                key={i}
+                                                className={`px-2.5 py-1 rounded-full text-sm font-medium ${activeTab === 'en'
+                                                    ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
+                                                    : 'bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400'
+                                                    }`}
+                                            >
+                                                {w.word}
+                                            </span>
+                                        ))}
+                                    </div>
+
+                                    {/* Generated sentence */}
+                                    <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 mb-3">
+                                        <div className="text-base text-slate-800 dark:text-slate-200 mb-1 leading-relaxed">{sentenceData.sentence}</div>
+                                        <div className="text-sm text-slate-500 dark:text-slate-400">{sentenceData.sentenceCn}</div>
+                                    </div>
+
+                                    {/* Actions */}
+                                    <div className="flex gap-2">
+                                        <button
+                                            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 active:scale-95 transition-all text-sm font-medium"
+                                            onClick={() => speakWord(sentenceData.sentence, activeTab, setSpeakingId, 'sentence', apiKey, (key) => setCachedKeys(prev => new Set(prev).add(key)))}
+                                        >
+                                            <Icons.Speaker playing={speakingId === 'sentence'} cached={false} /> 朗读
+                                        </button>
+                                        <button
+                                            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/50 active:scale-95 transition-all text-sm font-medium"
+                                            onClick={handleGenerateSentence}
+                                        >
+                                            <Icons.Refresh /> 换一批
+                                        </button>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="text-center text-slate-400 py-4">生成失败，请重试</div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Add Form */}
             {isAdding && (
