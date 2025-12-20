@@ -157,10 +157,38 @@ CREATE POLICY "Users can delete own saved sentences"
 └─────────────────┴───────────────────────────────┘
 ```
 
-## 常见问题
+## 如何验证 RLS 配置正确
 
-### Q: 为什么我无法保存单词？
-确保已正确配置 RLS 策略，且用户已登录。
+核对以下详细步骤来确认你的数据库安全设置是否生效：
+
+1.  **第一步**：点击左侧最上方的表格图标（**Table Editor**）。
+2.  **第二步**：在列表中点击 `words` 或 `saved_sentences` 表。
+3.  **第三步**：点击后进入**数据视图**（类似 Excel 的网格）。
+4.  **第四步**：目光移至网格的**右上方**。
+    - 你会看到一个标有 **`RLS policies`** 的按钮（例如：**`4 RLS policies`**）。
+    - 只要能看到这个带数字的按钮，说明 RLS 已经成功启用并加载了策略。 ✅
+
+```mermaid
+graph TD
+    A["Supabase Project Dashboard"] --> B["左侧菜单栏: 点击表格图标 ①"]
+    B --> C["中间列表: 点击表名 (words) ②"]
+    C --> D["右侧主视图: 数据网格 ③"]
+    D --> E["网格右上角: 确认看到绿色/蓝色按钮 'X RLS policies' ④"]
+    
+    style E fill:#dcfce7,stroke:#166534,stroke-width:2px
+    style C font-weight:bold
+    style D font-style:italic
+```
+
+### 状态核对表
+- **显示 `4 RLS policies`**：配置完美生效 ✅（说明你成功执行了 SQL 脚本中的 4 条策略）。
+- **显示 `RLS disabled`**：需要点击该按钮并选择 "Enable RLS"。
+- **显示 `0 RLS policies`**：需要重新执行 SQL 脚本，以确保安全规则已写入。
+
+> [!IMPORTANT]
+> 必须看到 RLS 已启用且有 Policy，否则你的数据将对外部公开，或导致登录用户无法读写数据。
+
+确保用户已登录后，应用才能根据这些策略正常读写数据。
 
 ### Q: 如何迁移本地数据？
 应用首次登录时会自动将 LocalStorage 中的数据迁移到云端。
