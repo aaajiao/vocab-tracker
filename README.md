@@ -16,18 +16,21 @@ A multi-language vocabulary learning application powered by AI, supporting Engli
 
 ### ✨ Features
 
+- **🌓 Dark Mode**: Manual toggle for Light/Dark themes with persistence.
+- **⚡ Performance**: Implemented window-level virtual scrolling for smooth handling of large vocabulary lists.
 - **🤖 AI Translation**: Automatically generates accurate Chinese translations using OpenAI GPT-4o-mini.
 - **📝 Contextual Examples**: Generates matching sentences based on word nature (Daily/Professional/Formal).
 - **✨ Combined Sentence Creation**: Randomly selects multiple saved words and AI generates a sentence containing them to reinforce memory.
 - **📍 Scene Tags**: Automatically tags sentences with applicable scenes (e.g., Daily Conversation, Workplace).
 - **⭐ Saved Sentences**: Save your favorite examples and combined sentences, synced to the cloud.
-- **🔊 High-Quality Audio**: Natural voice pronunciation using OpenAI TTS (English / German).
+- **🔊 High-Quality Audio**: Natural voice pronunciation using OpenAI TTS with visual feedback indicators.
 - **🇬🇧🇩🇪 Bilingual Support**: Supports both English and German vocabulary.
 - **📊 Statistics**: Real-time display of total vocabulary, count by language, and daily additions.
 - **🔍 Quick Search**: Search by word or translation.
 - **📅 Date Grouping**: Vocabulary automatically grouped by addition date.
 - **📤 CSV Export**: Support for exporting vocabulary data.
 - **☁️ Cloud Sync**: Uses Supabase for storage, ensuring data sync across devices.
+- **📱 PWA Ready**: Supports dark/light mode Apple Touch Icons for home screen installation.
 
 ### 🚀 Quick Start
 
@@ -105,6 +108,12 @@ This project requires a Supabase backend. Please refer to [SUPABASE_SETUP.md](./
 
 ### 📝 Changelog
 
+#### v1.1.0 (2025-12-20)
+- **🌓 Dark Mode**: Added manual theme toggle with persistent storage.
+- **⚡ Virtual Scrolling**: Implemented window-level virtualization for improved performance.
+- **🎨 UI/UX Enhancements**: Added visual indicators for audio generation and updated brand assets.
+- **📱 PWA Optimization**: Added adaptive Apple Touch Icons for Dark Mode.
+
 #### v1.0.0 (2025-12-20)
 - **Initial Release**: Complete vocabulary tracking features.
 - **Multi-language**: English and German support.
@@ -121,18 +130,21 @@ This project requires a Supabase backend. Please refer to [SUPABASE_SETUP.md](./
 
 ### ✨ 功能特性
 
+- **🌓 深色模式**：手动切换浅色/深色主题，支持状态持久化存储
+- **⚡ 性能优化**：实现窗口级虚拟滚动，流畅处理海量词汇列表
 - **🤖 AI 智能翻译**：使用 OpenAI GPT-4o-mini 自动生成准确的中文翻译
 - **📝 情境例句**：根据词汇性质（日常/专业/正式）生成匹配的例句
 - **✨ 组合造句**：随机选取多个已记录的单词，AI 生成包含这些单词的句子，加深记忆
 - **📍 场景标签**：根据单词类别自动标注句子适用场景（日常对话/职场交流等）
 - **⭐ 句子收藏**：收藏喜欢的例句和组合造句，云端同步
-- **🔊 高质量语音**：使用 OpenAI TTS 提供自然的语音朗读（英语 / 德语）
+- **🔊 高质量语音**：使用 OpenAI TTS 提供自然的语音朗读，并带有视觉状态反馈
 - **🇬🇧🇩🇪 双语支持**：同时支持英语和德语词汇
 - **📊 学习统计**：实时显示总词汇量、各语言数量和今日新增
 - **🔍 快速搜索**：支持按单词或翻译搜索
 - **📅 按日期分组**：词汇按添加日期自动分组显示
 - **📤 CSV 导出**：支持导出词汇数据
 - **☁️ 云端同步**：使用 Supabase 存储，跨设备同步数据
+- **📱 PWA 支持**：适配 iOS 主屏幕深浅色模式图标
 
 ### 🚀 快速开始
 
@@ -209,6 +221,12 @@ vocab-tracker/
 本项目需要 Supabase 后端支持。详细设置请参阅 [SUPABASE_SETUP.md](./SUPABASE_SETUP.md)。
 
 ### 📝 更新日志 (Changelog)
+
+#### v1.1.0 (2025-12-20)
+- **🌓 深色模式**: 添加手动主题切换，支持持久化存储。
+- **⚡ 虚拟滚动**: 实现窗口级虚拟滚动，大幅提升长列表性能。
+- **🎨 UI/UX 优化**: 增加语音状态反馈动画，优化界面细节。
+- **📱 PWA 优化**: 添加适配深色模式的 Apple Touch Icon。
 
 #### v1.0.0 (2025-12-20)
 - **首次发布**: 完整的词汇记录功能.
