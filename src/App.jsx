@@ -613,6 +613,7 @@ function AuthForm({ onAuth }) {
                             onChange={(e) => setPassword(e.target.value)}
                             required
                             minLength={6}
+                            autoComplete="current-password"
                         />
                     )}
 
@@ -1183,6 +1184,7 @@ function App() {
                                 onChange={(e) => setNewPassword(e.target.value)}
                                 minLength={6}
                                 required
+                                autoComplete="new-password"
                             />
                             <div className="flex gap-2">
                                 <button
@@ -1226,6 +1228,7 @@ function App() {
                         placeholder="sk-proj-xxxxx"
                         value={apiKey}
                         onChange={(e) => setApiKey(e.target.value)}
+                        autoComplete="off"
                     />
                     <div className="text-xs text-slate-400 mt-1">
                         Key 仅保存在本地浏览器中，不会上传到服务器。
@@ -1245,6 +1248,7 @@ function App() {
                             placeholder="sk-proj-..."
                             value={apiKey}
                             onChange={(e) => setApiKey(e.target.value)}
+                            autoComplete="off"
                         />
                         <button
                             className="flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"
