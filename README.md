@@ -108,6 +108,10 @@ This project requires a Supabase backend. Please refer to [SUPABASE_SETUP.md](./
 
 ### 📝 Changelog
 
+#### v1.4.1 (2025-12-21)
+- **📱 Swipe Delete for Saved Sentences**: Mobile users can now swipe to remove saved sentences.
+- **🖱️ Smart Device Detection**: Uses hover capability detection instead of screen width for desktop/mobile UI.
+
 #### v1.4.0 (2025-12-21)
 - **🪝 Custom Hooks**: Extracted `useAuth`, `useWords`, `useSentences`, `useDebounce`, `useToast` for cleaner code.
 - **🔍 Search Debounce**: Added 300ms delay for smoother search experience.
@@ -237,6 +241,10 @@ vocab-tracker/
 本项目需要 Supabase 后端支持。详细设置请参阅 [SUPABASE_SETUP.md](./SUPABASE_SETUP.md)。
 
 ### 📝 更新日志 (Changelog)
+
+#### v1.4.1 (2025-12-21)
+- **📱 收藏句子滑动删除**: 移动端用户可以滑动删除收藏的句子。
+- **🖱️ 智能设备检测**: 使用鼠标悬停能力检测而非屏幕宽度来区分桌面/移动端 UI。
 
 #### v1.4.0 (2025-12-21)
 - **🪝 Custom Hooks**: 提取 `useAuth`、`useWords`、`useSentences`、`useDebounce`、`useToast`，代码更清晰。

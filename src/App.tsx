@@ -8,6 +8,7 @@ import AuthForm from './components/AuthForm';
 import SettingsPanel from './components/SettingsPanel';
 import UndoToast from './components/UndoToast';
 import ToastContainer from './components/ToastContainer';
+import SwipeableSentenceCard from './components/SwipeableSentenceCard';
 
 // Services
 import { getAIContent, detectAndGetContent, regenerateExample, generateCombinedSentence } from './services/openai';
@@ -27,7 +28,7 @@ interface NewWord {
     language: 'en' | 'de';
     example: string;
     exampleCn: string;
-    category: string;
+    category: 'daily' | 'professional' | 'formal' | '';
 }
 
 function App() {
@@ -618,46 +619,15 @@ function App() {
                             <div className="text-sm text-slate-400">收藏你喜欢的例句和组合造句吧</div>
                         </div>
                     ) : (
-                        <div className="space-y-3">
+                        <div className="space-y-0">
                             {savedSentences.map(s => (
-                                <div key={s.id} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 shadow-sm">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <div className="flex items-center gap-2">
-                                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${s.language === 'en' ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400' : 'bg-green-50 text-green-600 dark:bg-green-900/20 dark:text-green-400'}`}>
-                                                {s.language === 'en' ? '🇬🇧' : '🇩🇪'}
-                                            </span>
-                                            {s.scene && (
-                                                <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                                                    📍 {s.scene}
-                                                </span>
-                                            )}
-                                            <span className="text-xs text-slate-400">{s.source_type === 'combined' ? '组合造句' : '单词例句'}</span>
-                                        </div>
-                                    </div>
-                                    <div className="text-base text-slate-800 dark:text-slate-200 mb-1 leading-relaxed">{s.sentence}</div>
-                                    <div className="text-sm text-slate-500 dark:text-slate-400 mb-2">{s.sentence_cn}</div>
-                                    {s.source_words && s.source_words.length > 0 && (
-                                        <div className="flex flex-wrap gap-1.5 mb-2">
-                                            {s.source_words.map((w, i) => (
-                                                <span key={i} className="text-xs px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-full">{w}</span>
-                                            ))}
-                                        </div>
-                                    )}
-                                    <div className="flex gap-2">
-                                        <button
-                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 active:scale-95 transition-all text-sm"
-                                            onClick={() => speakWord(s.sentence, s.language, setSpeakingId, s.id, apiKey, (key) => setCachedKeys(prev => new Set(prev).add(key)))}
-                                        >
-                                            <Icons.Speaker playing={speakingId === s.id} cached={false} /> 朗读
-                                        </button>
-                                        <button
-                                            className="flex items-center gap-1.5 px-3 py-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg active:scale-95 transition-all text-sm"
-                                            onClick={() => unsaveSentence(s.id)}
-                                        >
-                                            <Icons.Trash /> 移除
-                                        </button>
-                                    </div>
-                                </div>
+                                <SwipeableSentenceCard
+                                    key={s.id}
+                                    sentence={s}
+                                    onDelete={() => unsaveSentence(s.id)}
+                                    onSpeak={() => speakWord(s.sentence, s.language, setSpeakingId, s.id, apiKey, (key) => setCachedKeys(prev => new Set(prev).add(key)))}
+                                    speakingId={speakingId}
+                                />
                             ))}
                         </div>
                     )}

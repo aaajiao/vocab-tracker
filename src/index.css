@@ -70,3 +70,42 @@
 .animate-slide-in {
     animation: slide-in 0.3s ease-out forwards;
 }
+
+/* Device detection based on hover capability (not screen width) */
+/* Has mouse/trackpad - show hover elements, hide swipe hint */
+@media (hover: hover) and (pointer: fine) {
+    .hover-device-show {
+        display: block !important;
+    }
+
+    .hover-device-hide {
+        display: none !important;
+    }
+
+    .touch-device-show {
+        display: none !important;
+    }
+
+    .touch-device-hide {
+        display: block !important;
+    }
+}
+
+/* Touch only device - hide hover elements, enable swipe */
+@media (hover: none) or (pointer: coarse) {
+    .hover-device-show {
+        display: none !important;
+    }
+
+    .hover-device-hide {
+        display: block !important;
+    }
+
+    .touch-device-show {
+        display: block !important;
+    }
+
+    .touch-device-hide {
+        display: none !important;
+    }
+}
