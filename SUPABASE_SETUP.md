@@ -208,9 +208,6 @@ graph TD
     - 进入 **Authentication** → **Email Templates** → **Reset Password**。
     - 确保它处于 **Enabled** 状态。
     - 检查 `Confirm Reset Password` 模板内容，确保没有误删 `{{ .ConfirmationURL }}`。
-5.  **自定义 SMTP (高级解决方案)**：
-    - Supabase 默认的邮件服务主要用于开发测试，到达率不稳定。
-    - 在生产环境中，建议配置自己的 SMTP（如 SendGrid, Resend, 或阿里、腾讯的企业邮箱）。进入 **Settings** → **Auth** → **SMTP Settings** 进行配置。
 
 ### Q: 点击邮件中的链接没有反应，或者报错？
 - 确认 **Authentication** → **URL Configuration** 中的 `Redirect URLs` 必须配置正确。
