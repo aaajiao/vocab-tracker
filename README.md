@@ -108,6 +108,11 @@ This project requires a Supabase backend. Please refer to [SUPABASE_SETUP.md](./
 
 ### 📝 Changelog
 
+#### v1.4.0 (2025-12-21)
+- **🪝 Custom Hooks**: Extracted `useAuth`, `useWords`, `useSentences`, `useDebounce`, `useToast` for cleaner code.
+- **🔍 Search Debounce**: Added 300ms delay for smoother search experience.
+- **📣 Toast Notifications**: Success/error/info feedback for all operations.
+
 #### v1.3.0 (2025-12-20)
 - **📝 TypeScript Migration**: Full codebase migration to TypeScript for better type safety and IDE support.
 - **📦 Type Definitions**: Added comprehensive type definitions for all components and services.
@@ -232,6 +237,11 @@ vocab-tracker/
 本项目需要 Supabase 后端支持。详细设置请参阅 [SUPABASE_SETUP.md](./SUPABASE_SETUP.md)。
 
 ### 📝 更新日志 (Changelog)
+
+#### v1.4.0 (2025-12-21)
+- **🪝 Custom Hooks**: 提取 `useAuth`、`useWords`、`useSentences`、`useDebounce`、`useToast`，代码更清晰。
+- **🔍 搜索防抖**: 添加 300ms 延迟，搜索体验更流畅。
+- **📣 Toast 通知**: 所有操作提供成功/错误/信息反馈。
 
 #### v1.3.0 (2025-12-20)
 - **📝 TypeScript 迁移**: 全面迁移至 TypeScript，获得更好的类型安全和 IDE 支持。

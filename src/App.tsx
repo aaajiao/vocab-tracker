@@ -1,7 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { supabase } from './supabaseClient';
-import type { User } from '@supabase/supabase-js';
-import type { Word, SavedSentence, SentenceData, SentenceInput } from './types';
+import type { Word, SentenceData } from './types';
 
 // Components
 import { Icons } from './components/Icons';
@@ -9,6 +7,7 @@ import VirtualWordList from './components/VirtualWordList';
 import AuthForm from './components/AuthForm';
 import SettingsPanel from './components/SettingsPanel';
 import UndoToast from './components/UndoToast';
+import ToastContainer from './components/ToastContainer';
 
 // Services
 import { getAIContent, detectAndGetContent, regenerateExample, generateCombinedSentence } from './services/openai';
@@ -16,6 +15,11 @@ import { speakWord } from './services/tts';
 
 // Hooks
 import { useTheme } from './hooks/useTheme';
+import { useAuth } from './hooks/useAuth';
+import { useWords } from './hooks/useWords';
+import { useSentences } from './hooks/useSentences';
+import { useDebounce } from './hooks/useDebounce';
+import { useToast } from './hooks/useToast';
 
 interface NewWord {
     word: string;
@@ -27,13 +31,28 @@ interface NewWord {
 }
 
 function App() {
-    const [user, setUser] = useState<User | null>(null);
-    const [words, setWords] = useState<Word[]>([]);
+    // Hooks
+    const { theme, toggleTheme } = useTheme();
+    const { user, loading: authLoading, showPasswordUpdate, setShowPasswordUpdate, logout } = useAuth();
+    const { toasts, showToast, dismissToast } = useToast();
+
+    const {
+        words, loading: wordsLoading, syncing,
+        addWord, deleteWord, updateWordExample, restoreWord,
+        getFilteredWords, getGroupedByDate, stats
+    } = useWords({ userId: user?.id, showToast });
+
+    const {
+        savedSentences, savingId,
+        saveSentence, unsaveSentence, isSentenceSaved, getSavedSentenceId
+    } = useSentences({ userId: user?.id, showToast });
+
+    // Local state
     const [activeTab, setActiveTab] = useState<'all' | 'en' | 'de' | 'saved'>('all');
     const [searchQuery, setSearchQuery] = useState('');
+    const debouncedSearchQuery = useDebounce(searchQuery, 300);
     const [isAdding, setIsAdding] = useState(false);
     const [newWord, setNewWord] = useState<NewWord>({ word: '', meaning: '', language: 'en', example: '', exampleCn: '', category: '' });
-    const [loading, setLoading] = useState(true);
     const [aiLoading, setAiLoading] = useState(false);
     const [speakingId, setSpeakingId] = useState<string | null>(null);
     const [cachedKeys, setCachedKeys] = useState<Set<string>>(new Set());
@@ -46,162 +65,18 @@ function App() {
         return import.meta.env.VITE_OPENAI_API_KEY || '';
     });
     const [showSettings, setShowSettings] = useState(false);
-    const [syncing, setSyncing] = useState(false);
     const [todayFilter, setTodayFilter] = useState(false);
-    const { theme, toggleTheme } = useTheme();
-    const [showPasswordUpdate, setShowPasswordUpdate] = useState(false);
     const [newPassword, setNewPassword] = useState('');
     const [showSentence, setShowSentence] = useState(false);
     const [sentenceData, setSentenceData] = useState<SentenceData | null>(null);
     const [sentenceLoading, setSentenceLoading] = useState(false);
-    const [savedSentences, setSavedSentences] = useState<SavedSentence[]>([]);
-    const [savingId, setSavingId] = useState<string | null>(null);
-
-    // Undo state
     const [deletedItem, setDeletedItem] = useState<Word | null>(null);
 
     const inputRef = useRef<HTMLInputElement>(null);
     const aiTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const ignoreFetch = useRef(false);
 
-    // Auth state listener
-    useEffect(() => {
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            setUser(session?.user ?? null);
-            if (session?.user) loadWords(session.user.id);
-            else setLoading(false);
-        });
-
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-            if (event === 'PASSWORD_RECOVERY') {
-                setShowPasswordUpdate(true);
-            }
-            setUser(session?.user ?? null);
-            if (session?.user) loadWords(session.user.id);
-            else {
-                setWords([]);
-                setLoading(false);
-            }
-        });
-
-        return () => subscription.unsubscribe();
-    }, []);
-
-    // Load words from Supabase
-    const loadWords = async (userId: string) => {
-        setLoading(true);
-        const { data, error } = await supabase
-            .from('words')
-            .select('*')
-            .eq('user_id', userId)
-            .order('created_at', { ascending: false });
-
-        if (error) {
-            console.error('Load error:', error);
-        } else {
-            const formatted: Word[] = (data || []).map((w: any) => ({
-                id: w.id,
-                word: w.word,
-                meaning: w.meaning,
-                language: w.language,
-                example: w.example || '',
-                exampleCn: w.example_cn || '',
-                category: w.category || '',
-                date: w.date,
-                timestamp: new Date(w.created_at).getTime()
-            }));
-            setWords(formatted);
-            await migrateLocalStorage(userId);
-        }
-
-        const savedKey = localStorage.getItem('vocab-api-key');
-        if (savedKey) setApiKey(savedKey);
-        await loadSavedSentences(userId);
-        setLoading(false);
-    };
-
-    const loadSavedSentences = async (userId: string) => {
-        const { data, error } = await supabase
-            .from('saved_sentences')
-            .select('*')
-            .eq('user_id', userId)
-            .order('created_at', { ascending: false });
-
-        if (!error) {
-            setSavedSentences(data || []);
-        }
-    };
-
-    const saveSentence = useCallback(async (sentenceObj: SentenceInput) => {
-        if (!user) return;
-        setSavingId(sentenceObj.sentence);
-
-        const { data, error } = await supabase.from('saved_sentences').insert({
-            user_id: user.id,
-            sentence: sentenceObj.sentence,
-            sentence_cn: sentenceObj.sentenceCn,
-            language: sentenceObj.language,
-            scene: sentenceObj.scene || null,
-            source_type: sentenceObj.sourceType,
-            source_words: sentenceObj.sourceWords || []
-        }).select();
-
-        if (!error && data) {
-            setSavedSentences(prev => [data[0], ...prev]);
-        }
-        setSavingId(null);
-    }, [user]);
-
-    const unsaveSentence = useCallback(async (id: string) => {
-        const { error } = await supabase.from('saved_sentences').delete().eq('id', id);
-        if (!error) {
-            setSavedSentences(prev => prev.filter(s => s.id !== id));
-        }
-    }, []);
-
-    const isSentenceSaved = useCallback((sentence: string) => {
-        return savedSentences.some(s => s.sentence === sentence);
-    }, [savedSentences]);
-
-    const getSavedSentenceId = useCallback((sentence: string): string | null => {
-        const found = savedSentences.find(s => s.sentence === sentence);
-        return found ? found.id : null;
-    }, [savedSentences]);
-
-    const migrateLocalStorage = async (userId: string) => {
-        const localData = localStorage.getItem('vocab-words-v4');
-        if (!localData) return;
-
-        try {
-            const localWords = JSON.parse(localData);
-            if (localWords.length === 0) return;
-
-            setSyncing(true);
-
-            for (const w of localWords) {
-                const { error } = await supabase.from('words').upsert({
-                    user_id: userId,
-                    word: w.word,
-                    meaning: w.meaning,
-                    language: w.language,
-                    example: w.example,
-                    example_cn: w.exampleCn,
-                    category: w.category || '',
-                    date: w.date
-                }, { onConflict: 'user_id,word,language' });
-
-                if (error) console.error('Migration error:', error);
-            }
-
-            await loadWords(userId);
-            localStorage.removeItem('vocab-words-v4');
-            console.log(`Migrated ${localWords.length} words to cloud`);
-            setSyncing(false);
-        } catch (e) {
-            console.error('Migration failed:', e);
-            setSyncing(false);
-        }
-    };
+    const loading = authLoading || wordsLoading;
 
     // Save API Key
     useEffect(() => {
@@ -252,18 +127,11 @@ function App() {
         if (!word || !apiKey) return;
         setRegeneratingId(wordId);
         const newEx = await regenerateExample(word.word, word.meaning, word.language, apiKey);
-        if (newEx && user) {
-            const { error } = await supabase
-                .from('words')
-                .update({ example: newEx.example, example_cn: newEx.exampleCn })
-                .eq('id', wordId);
-
-            if (!error) {
-                setWords(prev => prev.map(w => w.id === wordId ? { ...w, example: newEx.example, exampleCn: newEx.exampleCn } : w));
-            }
+        if (newEx) {
+            await updateWordExample(wordId, newEx.example, newEx.exampleCn);
         }
         setRegeneratingId(null);
-    }, [words, apiKey, user]);
+    }, [words, apiKey, updateWordExample]);
 
     const handleStartAdd = async () => {
         setIsAdding(true);
@@ -292,119 +160,51 @@ function App() {
         }
     };
 
-    const addWord = async () => {
-        if (!newWord.word.trim() || !newWord.meaning.trim() || !user) return;
+    const handleAddWord = async () => {
+        if (!newWord.word.trim() || !newWord.meaning.trim()) return;
 
-        setSyncing(true);
-
-        const { data, error } = await supabase.from('words').insert({
-            user_id: user.id,
+        await addWord({
             word: newWord.word.trim(),
             meaning: newWord.meaning.trim(),
             language: newWord.language,
             example: newWord.example.trim(),
-            example_cn: newWord.exampleCn.trim(),
+            exampleCn: newWord.exampleCn.trim(),
             category: newWord.category,
             date: new Date().toLocaleDateString('sv-SE')
-        }).select().single();
-
-        if (error) {
-            console.error('Add error:', error);
-        } else {
-            setWords(prev => [{
-                id: data.id,
-                word: data.word,
-                meaning: data.meaning,
-                language: data.language,
-                example: data.example || '',
-                exampleCn: data.example_cn || '',
-                category: data.category || '',
-                date: data.date,
-                timestamp: new Date(data.created_at).getTime()
-            }, ...prev]);
-        }
+        });
 
         setNewWord({ word: '', meaning: '', language: newWord.language, example: '', exampleCn: '', category: '' });
         setIsAdding(false);
         setSearchQuery('');
-        setSyncing(false);
     };
 
-    const deleteWord = useCallback(async (id: string) => {
-        if (!user) return;
-
-        // Store deleted word for undo
-        const wordToDelete = words.find(w => w.id === id);
-        if (wordToDelete) {
-            setDeletedItem(wordToDelete);
+    const handleDeleteWord = useCallback(async (id: string) => {
+        const deleted = await deleteWord(id);
+        if (deleted) {
+            setDeletedItem(deleted);
         }
-
-        // Optimistically remove from UI
-        setWords(prev => prev.filter(w => w.id !== id));
-
-        // Delete from database
-        const { error } = await supabase.from('words').delete().eq('id', id);
-        if (error) {
-            // Restore on error
-            if (wordToDelete) {
-                setWords(prev => [...prev, wordToDelete].sort((a, b) => b.timestamp - a.timestamp));
-            }
-            console.error('Delete error:', error);
-        }
-    }, [user, words]);
+    }, [deleteWord]);
 
     const handleUndo = useCallback(async () => {
-        if (!deletedItem || !user) return;
-
-        // Re-insert the word
-        const { data, error } = await supabase.from('words').insert({
-            user_id: user.id,
-            word: deletedItem.word,
-            meaning: deletedItem.meaning,
-            language: deletedItem.language,
-            example: deletedItem.example,
-            example_cn: deletedItem.exampleCn,
-            category: deletedItem.category,
-            date: deletedItem.date
-        }).select().single();
-
-        if (!error && data) {
-            setWords(prev => [{
-                id: data.id,
-                word: data.word,
-                meaning: data.meaning,
-                language: data.language,
-                example: data.example || '',
-                exampleCn: data.example_cn || '',
-                category: data.category || '',
-                date: data.date,
-                timestamp: new Date(data.created_at).getTime()
-            }, ...prev]);
-        }
-
+        if (!deletedItem) return;
+        await restoreWord(deletedItem);
         setDeletedItem(null);
-    }, [deletedItem, user]);
+    }, [deletedItem, restoreWord]);
 
     const handleUndoDismiss = useCallback(() => {
         setDeletedItem(null);
     }, []);
 
-    const handleLogout = async () => {
-        await supabase.auth.signOut();
-    };
+    // Computed values with debounced search
+    const filteredWords = useMemo(() =>
+        getFilteredWords(activeTab, debouncedSearchQuery, todayFilter),
+        [getFilteredWords, activeTab, debouncedSearchQuery, todayFilter]
+    );
 
-    const filteredWords = useMemo(() => words.filter(w => {
-        const matchesTab = activeTab === 'all' || activeTab === 'saved' || w.language === activeTab;
-        const matchesSearch = !searchQuery || w.word.toLowerCase().includes(searchQuery.toLowerCase()) || w.meaning.includes(searchQuery);
-        const matchesToday = !todayFilter || w.date === new Date().toLocaleDateString('sv-SE');
-        return matchesTab && matchesSearch && matchesToday;
-    }), [words, activeTab, searchQuery, todayFilter]);
-
-    const groupedByDate = useMemo(() => filteredWords.reduce((acc, word) => {
-        if (!acc[word.date]) acc[word.date] = [];
-        acc[word.date].push(word);
-        return acc;
-    }, {} as Record<string, Word[]>), [filteredWords]);
+    const groupedByDate = useMemo(() =>
+        getGroupedByDate(filteredWords),
+        [getGroupedByDate, filteredWords]
+    );
 
     const formatDate = useCallback((d: string) => {
         const today = new Date().toLocaleDateString('sv-SE');
@@ -437,15 +237,13 @@ function App() {
         a.href = URL.createObjectURL(blob);
         a.download = `vocab-${new Date().toLocaleDateString('sv-SE')}.csv`;
         a.click();
-    }, [words]);
+        showToast('success', '导出成功');
+    }, [words, showToast]);
 
-    const stats = useMemo(() => ({
-        total: words.length,
-        en: words.filter(w => w.language === 'en').length,
-        de: words.filter(w => w.language === 'de').length,
-        today: words.filter(w => w.date === new Date().toLocaleDateString('sv-SE')).length,
+    const allStats = useMemo(() => ({
+        ...stats,
         saved: savedSentences.length
-    }), [words, savedSentences]);
+    }), [stats, savedSentences]);
 
     const handleGenerateSentence = async () => {
         if (!apiKey || activeTab === 'all') return;
@@ -471,6 +269,7 @@ function App() {
             });
         } else {
             setSentenceData(null);
+            showToast('error', '生成失败，请重试');
         }
 
         setSentenceLoading(false);
@@ -478,13 +277,16 @@ function App() {
 
     // Show auth form if not logged in
     if (!user && !loading) {
-        return <AuthForm onAuth={setUser} />;
+        return <AuthForm onAuth={() => { }} />;
     }
 
     if (loading) return <div className="container" style={{ textAlign: 'center', paddingTop: '4rem', color: '#64748b' }}>Loading...</div>;
 
     return (
         <div className="max-w-xl mx-auto p-4 py-8">
+            {/* Toast Notifications */}
+            <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
             {/* Header */}
             <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-3">
@@ -506,7 +308,7 @@ function App() {
                     {words.length > 0 && (
                         <button className="flex items-center gap-2 px-3 py-2 text-sm text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg active:scale-95 transition-all" onClick={exportWords}><Icons.Download /> 导出</button>
                     )}
-                    <button className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 rounded-lg active:scale-90 transition-all" onClick={handleLogout} title="退出登录"><Icons.LogOut /></button>
+                    <button className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 rounded-lg active:scale-90 transition-all" onClick={logout} title="退出登录"><Icons.LogOut /></button>
                 </div>
             </div>
 
@@ -519,13 +321,14 @@ function App() {
                         <form onSubmit={async (e) => {
                             e.preventDefault();
                             if (newPassword.length < 6) return;
+                            const { supabase } = await import('./supabaseClient');
                             const { error } = await supabase.auth.updateUser({ password: newPassword });
                             if (!error) {
                                 setShowPasswordUpdate(false);
                                 setNewPassword('');
-                                alert('密码修改成功！');
+                                showToast('success', '密码修改成功');
                             } else {
-                                alert('修改失败：' + error.message);
+                                showToast('error', '修改失败：' + error.message);
                             }
                         }}>
                             <input
@@ -566,14 +369,11 @@ function App() {
                         <h3 className="text-sm font-semibold text-red-600 m-0">需要 OpenAI API Key</h3>
                     </div>
                     <p className="text-xs text-red-700 mb-3 leading-relaxed">
-                        本应用使用 OpenAI 进行翻译、例句生成和语音朗读。请输入您的 OpenAI API Key 才能使用完整功能。
-                        <br />
-                        <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline">
-                            → 获取 API Key
+                        本应用使用 OpenAI 进行翻译、例句生成和语音朗读。
+                        <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline ml-1">
+                            获取 API Key →
                         </a>
                     </p>
-                    <label className="block text-xs text-slate-500 mb-1">OpenAI API Key</label>
                     <input
                         className="w-full px-3 py-2 bg-white border border-red-200 rounded-lg text-sm outline-none focus:border-red-400 text-slate-800"
                         type="password"
@@ -582,9 +382,6 @@ function App() {
                         onChange={(e) => setApiKey(e.target.value)}
                         autoComplete="off"
                     />
-                    <div className="text-xs text-slate-400 mt-1">
-                        Key 仅保存在本地浏览器中，不会上传到服务器。
-                    </div>
                 </div>
             )}
 
@@ -599,28 +396,28 @@ function App() {
                     className={`bg-white dark:bg-slate-800 border rounded-xl p-3 shadow-sm text-left transition-all hover:border-slate-400 dark:hover:border-slate-500 active:scale-95 ${activeTab === 'all' ? 'border-slate-400 dark:border-slate-500 ring-1 ring-slate-400/20' : 'border-slate-200 dark:border-slate-700'}`}
                     onClick={() => { setActiveTab('all'); setTodayFilter(false); setShowSentence(false); setSentenceData(null); }}
                 >
-                    <div className="text-2xl font-bold text-slate-800 dark:text-slate-100">{stats.total}</div>
+                    <div className="text-2xl font-bold text-slate-800 dark:text-slate-100">{allStats.total}</div>
                     <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">总计</div>
                 </button>
                 <button
                     className={`bg-white dark:bg-slate-800 border rounded-xl p-3 shadow-sm text-left transition-all hover:border-blue-400 dark:hover:border-blue-500 active:scale-95 ${activeTab === 'en' ? 'border-blue-400 dark:border-blue-500 ring-1 ring-blue-400/20' : 'border-slate-200 dark:border-slate-700'}`}
                     onClick={() => { setActiveTab('en'); setTodayFilter(false); setShowSentence(false); setSentenceData(null); }}
                 >
-                    <div className="text-2xl font-bold text-blue-600">{stats.en}</div>
+                    <div className="text-2xl font-bold text-blue-600">{allStats.en}</div>
                     <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">英语</div>
                 </button>
                 <button
                     className={`bg-white dark:bg-slate-800 border rounded-xl p-3 shadow-sm text-left transition-all hover:border-green-400 dark:hover:border-green-500 active:scale-95 ${activeTab === 'de' ? 'border-green-400 dark:border-green-500 ring-1 ring-green-400/20' : 'border-slate-200 dark:border-slate-700'}`}
                     onClick={() => { setActiveTab('de'); setTodayFilter(false); setShowSentence(false); setSentenceData(null); }}
                 >
-                    <div className="text-2xl font-bold text-green-600">{stats.de}</div>
+                    <div className="text-2xl font-bold text-green-600">{allStats.de}</div>
                     <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">德语</div>
                 </button>
                 <button
                     className={`bg-white dark:bg-slate-800 border rounded-xl p-3 shadow-sm text-left transition-all hover:border-amber-400 dark:hover:border-amber-500 active:scale-95 ${todayFilter ? 'border-amber-400 dark:border-amber-500 ring-1 ring-amber-400/20' : 'border-slate-200 dark:border-slate-700'}`}
                     onClick={() => { setTodayFilter(!todayFilter); setActiveTab('all'); setShowSentence(false); setSentenceData(null); }}
                 >
-                    <div className="text-2xl font-bold text-amber-600">{stats.today}</div>
+                    <div className="text-2xl font-bold text-amber-600">{allStats.today}</div>
                     <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">今日</div>
                 </button>
             </div>
@@ -655,13 +452,13 @@ function App() {
                             }`}
                         onClick={() => { setActiveTab(t.id); setTodayFilter(false); setShowSentence(false); setSentenceData(null); }}
                     >
-                        {t.label}<span className="ml-1 opacity-60 text-xs">{t.id === 'all' ? stats.total : stats[t.id]}</span>
+                        {t.label}<span className="ml-1 opacity-60 text-xs">{t.id === 'all' ? allStats.total : allStats[t.id]}</span>
                     </button>
                 ))}
             </div>
 
             {/* Sentence Generation Panel */}
-            {(activeTab === 'en' || activeTab === 'de') && stats[activeTab] >= 2 && (
+            {(activeTab === 'en' || activeTab === 'de') && allStats[activeTab] >= 2 && (
                 <div className="mb-6">
                     {!showSentence ? (
                         <button
@@ -803,7 +600,7 @@ function App() {
                         </>
                     )}
                     <div className="flex gap-2">
-                        <button className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200 active:scale-95 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed" onClick={addWord} disabled={!newWord.word.trim() || !newWord.meaning.trim() || aiLoading || syncing}>
+                        <button className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200 active:scale-95 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed" onClick={handleAddWord} disabled={!newWord.word.trim() || !newWord.meaning.trim() || aiLoading || syncing}>
                             {syncing ? '保存中...' : '保存'}
                         </button>
                         <button className="px-4 py-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors font-medium" onClick={() => { setIsAdding(false); setNewWord({ word: '', meaning: '', language: 'en', example: '', exampleCn: '', category: '' }); }}>取消</button>
@@ -875,7 +672,7 @@ function App() {
                 <VirtualWordList
                     groupedByDate={groupedByDate}
                     formatDate={formatDate}
-                    deleteWord={deleteWord}
+                    deleteWord={handleDeleteWord}
                     speakWord={speakWord}
                     setSpeakingId={setSpeakingId}
                     speakingId={speakingId}
