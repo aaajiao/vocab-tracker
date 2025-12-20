@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import { supabase } from './supabaseClient';
 
 // Icons
@@ -18,6 +19,183 @@ const Icons = {
     Moon: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg>,
     Sun: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>
 };
+
+// Swipeable Card Component - touch swipe on mobile, hover delete on desktop
+function SwipeableCard({ children, onDelete, className }) {
+    const [offset, setOffset] = useState(0);
+    const [swiping, setSwiping] = useState(false);
+    const [hovering, setHovering] = useState(false);
+    const startX = useRef(0);
+    const currentX = useRef(0);
+
+    const handleTouchStart = (e) => {
+        startX.current = e.touches[0].clientX;
+        currentX.current = startX.current;
+        setSwiping(true);
+    };
+
+    const handleTouchMove = (e) => {
+        if (!swiping) return;
+        currentX.current = e.touches[0].clientX;
+        const diff = currentX.current - startX.current;
+        if (diff < 0) {
+            setOffset(Math.max(diff, -100));
+        }
+    };
+
+    const handleTouchEnd = () => {
+        setSwiping(false);
+        if (offset < -60) {
+            setOffset(-100);
+            setTimeout(() => onDelete(), 200);
+        } else {
+            setOffset(0);
+        }
+    };
+
+    return (
+        <div
+            className="relative overflow-hidden rounded-xl mb-3"
+            onMouseEnter={() => setHovering(true)}
+            onMouseLeave={() => setHovering(false)}
+        >
+            {/* Swipe delete background (mobile) */}
+            <div
+                className="absolute inset-y-0 right-0 w-24 bg-red-500 flex items-center justify-center text-white"
+                style={{ opacity: Math.min(1, Math.abs(offset) / 60) }}
+            >
+                <Icons.Trash />
+                <span className="ml-1 text-sm font-medium">删除</span>
+            </div>
+            <div
+                className={className}
+                style={{
+                    transform: `translateX(${offset}px)`,
+                    transition: swiping ? 'none' : 'transform 0.2s ease-out'
+                }}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+            >
+                <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1">
+                        {children}
+                    </div>
+                    {/* Desktop delete button (hover) */}
+                    <button
+                        className={`p-2.5 rounded-lg text-slate-300 dark:text-slate-600 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 active:scale-90 transition-all hidden sm:block ${hovering ? 'opacity-100' : 'opacity-0'}`}
+                        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                    >
+                        <Icons.Trash />
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// Virtual Word List Component - uses window scroll for natural page scrolling
+function VirtualWordList({
+    groupedByDate, formatDate, deleteWord, speakWord, setSpeakingId,
+    speakingId, apiKey, setCachedKeys, cachedKeys, getCategoryClass,
+    getCategoryLabel, handleRegenerate, regeneratingId
+}) {
+    const listRef = useRef(null);
+
+    // Flatten grouped data into a single list with date headers
+    const flatList = [];
+    Object.entries(groupedByDate)
+        .sort(([a], [b]) => b.localeCompare(a))
+        .forEach(([date, dateWords]) => {
+            flatList.push({ type: 'header', date, count: dateWords.length });
+            dateWords.sort((a, b) => b.timestamp - a.timestamp)
+                .forEach(word => flatList.push({ type: 'word', ...word }));
+        });
+
+    const virtualizer = useWindowVirtualizer({
+        count: flatList.length,
+        estimateSize: (index) => flatList[index]?.type === 'header' ? 48 : 180,
+        overscan: 5,
+        scrollMargin: listRef.current?.offsetTop ?? 0,
+    });
+
+    return (
+        <div ref={listRef}>
+            <div
+                style={{
+                    height: `${virtualizer.getTotalSize()}px`,
+                    width: '100%',
+                    position: 'relative',
+                }}
+            >
+                {virtualizer.getVirtualItems().map((virtualRow) => {
+                    const item = flatList[virtualRow.index];
+                    if (!item) return null;
+
+                    if (item.type === 'header') {
+                        return (
+                            <div
+                                key={`header-${item.date}`}
+                                style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    width: '100%',
+                                    height: `${virtualRow.size}px`,
+                                    transform: `translateY(${virtualRow.start - (virtualizer.options.scrollMargin || 0)}px)`,
+                                }}
+                                className="flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 pt-4"
+                            >
+                                <Icons.Calendar /> {formatDate(item.date)}
+                                <span className="text-xs opacity-60">({item.count})</span>
+                            </div>
+                        );
+                    }
+
+                    const word = item;
+                    return (
+                        <div
+                            key={word.id}
+                            style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                width: '100%',
+                                transform: `translateY(${virtualRow.start - (virtualizer.options.scrollMargin || 0)}px)`,
+                            }}
+                        >
+                            <SwipeableCard
+                                onDelete={() => deleteWord(word.id)}
+                                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 hover:border-blue-300 dark:hover:border-blue-700 transition-all group shadow-sm"
+                            >
+                                <div className="flex flex-wrap items-center gap-2 mb-1">
+                                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${word.language === 'en' ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400' : 'bg-green-50 text-green-600 dark:bg-green-900/20 dark:text-green-400'}`}>
+                                        {word.language === 'en' ? '🇬🇧' : '🇩🇪'}
+                                    </span>
+                                    {word.category && <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getCategoryClass(word.category)}`}>{getCategoryLabel(word.category)}</span>}
+                                    <span className="text-lg font-bold text-slate-800 dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer inline-flex items-center gap-1 transition-colors" onClick={() => speakWord(word.word, word.language, setSpeakingId, word.id, apiKey, (key) => setCachedKeys(prev => new Set(prev).add(key)))}>
+                                        {word.word}
+                                        <button className={`p-1.5 rounded-full hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 active:scale-90 transition-all ${speakingId === word.id ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/30 animate-pulse-ring' : (cachedKeys.has(`${word.language}:${word.word}`) ? 'text-blue-400/80 dark:text-blue-400/60' : 'text-slate-400')}`}>
+                                            <Icons.Speaker playing={speakingId === word.id} cached={cachedKeys.has(`${word.language}:${word.word}`)} />
+                                        </button>
+                                    </span>
+                                </div>
+                                <div className="text-sm text-slate-600 dark:text-slate-300 mb-2 font-medium">{word.meaning}</div>
+                                {word.example && (
+                                    <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 relative group/example">
+                                        <div className="text-sm text-slate-700 dark:text-slate-300 mb-0.5 pr-6">{word.example}</div>
+                                        <div className="text-xs text-slate-500 dark:text-slate-400">{word.exampleCn}</div>
+                                        <button className={`absolute top-2 right-2 p-2 rounded-lg text-slate-300 dark:text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 active:scale-90 transition-all ${regeneratingId === word.id ? 'animate-spin text-amber-600' : ''}`} onClick={() => handleRegenerate(word.id)} title="重新生成例句"><Icons.Refresh /></button>
+                                    </div>
+                                )}
+                            </SwipeableCard>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
 
 // OpenAI - Get translation and contextual example
 async function getAIContent(text, sourceLang, apiKey) {
@@ -679,7 +857,7 @@ function App() {
             example: newWord.example.trim(),
             example_cn: newWord.exampleCn.trim(),
             category: newWord.category,
-            date: new Date().toISOString().split('T')[0]
+            date: new Date().toLocaleDateString('sv-SE')
         }).select().single();
 
         if (error) {
@@ -731,8 +909,8 @@ function App() {
     }, {});
 
     const formatDate = (d) => {
-        const today = new Date().toISOString().split('T')[0];
-        const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+        const today = new Date().toLocaleDateString('sv-SE');
+        const yesterday = new Date(Date.now() - 86400000).toLocaleDateString('sv-SE');
         if (d === today) return '今天';
         if (d === yesterday) return '昨天';
         return new Date(d).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
@@ -758,7 +936,7 @@ function App() {
         const blob = new Blob([csv], { type: 'text/csv' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `vocab-${new Date().toISOString().split('T')[0]}.csv`;
+        a.download = `vocab-${new Date().toLocaleDateString('sv-SE')}.csv`;
         a.click();
     };
 
@@ -766,7 +944,7 @@ function App() {
         total: words.length,
         en: words.filter(w => w.language === 'en').length,
         de: words.filter(w => w.language === 'de').length,
-        today: words.filter(w => w.date === new Date().toISOString().split('T')[0]).length
+        today: words.filter(w => w.date === new Date().toLocaleDateString('sv-SE')).length
     };
 
     // Show auth form if not logged in
@@ -792,14 +970,14 @@ function App() {
                     </div>
                 </div>
                 <div className="flex gap-2">
-                    <button className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 rounded-lg transition-colors" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+                    <button className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 rounded-lg active:scale-90 transition-all" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
                         {theme === 'dark' ? <Icons.Sun /> : <Icons.Moon />}
                     </button>
-                    <button className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 rounded-lg transition-colors" onClick={() => setShowSettings(!showSettings)}><Icons.Settings /></button>
+                    <button className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 rounded-lg active:scale-90 transition-all" onClick={() => setShowSettings(!showSettings)}><Icons.Settings /></button>
                     {words.length > 0 && (
-                        <button className="flex items-center gap-2 px-3 py-2 text-sm text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" onClick={exportWords}><Icons.Download /> 导出</button>
+                        <button className="flex items-center gap-2 px-3 py-2 text-sm text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg active:scale-95 transition-all" onClick={exportWords}><Icons.Download /> 导出</button>
                     )}
-                    <button className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 rounded-lg transition-colors" onClick={handleLogout} title="退出登录"><Icons.LogOut /></button>
+                    <button className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 rounded-lg active:scale-90 transition-all" onClick={handleLogout} title="退出登录"><Icons.LogOut /></button>
                 </div>
             </div>
 
@@ -911,7 +1089,7 @@ function App() {
 
             {/* Stats */}
             {/* Stats */}
-            <div className="grid grid-cols-4 gap-3 mb-6">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
                 <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
                     <div className="text-2xl font-bold text-slate-800 dark:text-slate-100">{stats.total}</div>
                     <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">总计</div>
@@ -943,7 +1121,7 @@ function App() {
                     />
                 </div>
                 <button
-                    className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 text-white rounded-xl hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200 transition-colors font-medium shadow-lg shadow-slate-900/10"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 text-white rounded-xl hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200 active:scale-95 transition-all font-medium shadow-lg shadow-slate-900/10"
                     onClick={handleStartAdd}
                 >
                     <Icons.Plus /> 添加
@@ -1006,7 +1184,7 @@ function App() {
                         </>
                     )}
                     <div className="flex gap-2">
-                        <button className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed" onClick={addWord} disabled={!newWord.word.trim() || !newWord.meaning.trim() || aiLoading || syncing}>
+                        <button className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200 active:scale-95 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed" onClick={addWord} disabled={!newWord.word.trim() || !newWord.meaning.trim() || aiLoading || syncing}>
                             {syncing ? '保存中...' : '保存'}
                         </button>
                         <button className="px-4 py-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors font-medium" onClick={() => { setIsAdding(false); setNewWord({ word: '', meaning: '', language: 'en', example: '', exampleCn: '', category: '' }); }}>取消</button>
@@ -1022,42 +1200,21 @@ function App() {
                     <div className="text-sm text-slate-400">开始记录你每天遇到的新单词吧</div>
                 </div>
             ) : (
-                Object.entries(groupedByDate).sort(([a], [b]) => b.localeCompare(a)).map(([date, dateWords]) => (
-                    <div key={date} className="mb-8">
-                        <div className="flex items-center gap-2 mb-3 text-sm font-medium text-slate-500 dark:text-slate-400">
-                            <Icons.Calendar /> {formatDate(date)} <span className="text-xs opacity-60">({dateWords.length})</span>
-                        </div>
-                        {dateWords.sort((a, b) => b.timestamp - a.timestamp).map(word => (
-                            <div key={word.id} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 mb-3 hover:border-blue-300 dark:hover:border-blue-700 transition-all group shadow-sm">
-                                <div className="flex items-start justify-between gap-3">
-                                    <div className="flex-1">
-                                        <div className="flex flex-wrap items-center gap-2 mb-1">
-                                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${word.language === 'en' ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400' : 'bg-green-50 text-green-600 dark:bg-green-900/20 dark:text-green-400'}`}>
-                                                {word.language === 'en' ? '🇬🇧' : '🇩🇪'}
-                                            </span>
-                                            {word.category && <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getCategoryClass(word.category)}`}>{getCategoryLabel(word.category)}</span>}
-                                            <span className="text-lg font-bold text-slate-800 dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer inline-flex items-center gap-1 transition-colors" onClick={() => speakWord(word.word, word.language, setSpeakingId, word.id, apiKey, (key) => setCachedKeys(prev => new Set(prev).add(key)))}>
-                                                {word.word}
-                                                <button className={`p-1 rounded-full hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors ${speakingId === word.id ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/30' : (cachedKeys.has(`${word.language}:${word.word}`) ? 'text-blue-400/80 dark:text-blue-400/60' : 'text-slate-400')}`}>
-                                                    <Icons.Speaker playing={speakingId === word.id} cached={cachedKeys.has(`${word.language}:${word.word}`)} />
-                                                </button>
-                                            </span>
-                                        </div>
-                                        <div className="text-sm text-slate-600 dark:text-slate-300 mb-2 font-medium">{word.meaning}</div>
-                                        {word.example && (
-                                            <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 relative group/example">
-                                                <div className="text-sm text-slate-700 dark:text-slate-300 mb-0.5 pr-6">{word.example}</div>
-                                                <div className="text-xs text-slate-500 dark:text-slate-400">{word.exampleCn}</div>
-                                                <button className={`absolute top-2 right-2 p-1.5 rounded text-slate-400 opacity-0 group-hover/example:opacity-100 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-all ${regeneratingId === word.id ? 'opacity-100 animate-spin text-amber-600' : ''}`} onClick={() => handleRegenerate(word.id)} title="重新生成例句"><Icons.Refresh /></button>
-                                            </div>
-                                        )}
-                                    </div>
-                                    <button className="p-2 rounded-lg text-slate-400 opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 transition-all" onClick={() => deleteWord(word.id)}><Icons.Trash /></button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                ))
+                <VirtualWordList
+                    groupedByDate={groupedByDate}
+                    formatDate={formatDate}
+                    deleteWord={deleteWord}
+                    speakWord={speakWord}
+                    setSpeakingId={setSpeakingId}
+                    speakingId={speakingId}
+                    apiKey={apiKey}
+                    setCachedKeys={setCachedKeys}
+                    cachedKeys={cachedKeys}
+                    getCategoryClass={getCategoryClass}
+                    getCategoryLabel={getCategoryLabel}
+                    handleRegenerate={handleRegenerate}
+                    regeneratingId={regeneratingId}
+                />
             )}
 
             <div className="mt-8 text-center text-xs text-slate-400 flex items-center justify-center gap-1 pb-8">
