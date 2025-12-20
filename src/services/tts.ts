@@ -1,10 +1,17 @@
 // TTS (Text-to-Speech) service
 
 // Audio Cache to save bandwidth and make repeated plays instant
-export const audioCache = new Map();
+export const audioCache = new Map<string, string>();
 
 // OpenAI Text-to-Speech
-export async function speakWord(text, language, setSpeakingId, wordId, apiKey, onCacheUpdate) {
+export async function speakWord(
+    text: string,
+    language: string,
+    setSpeakingId: (id: string | null) => void,
+    wordId: string,
+    apiKey: string,
+    onCacheUpdate?: (key: string) => void
+): Promise<void> {
     setSpeakingId(wordId);
 
     // Cache key
@@ -44,13 +51,11 @@ export async function speakWord(text, language, setSpeakingId, wordId, apiKey, o
     // Try with retry logic (Exponential Backoff)
     let retries = 0;
     const maxRetries = 3;
-    let response;
+    let response: Response | undefined;
 
     while (retries <= maxRetries) {
         try {
             // Optimization: Add period to short words to prevent cutoff
-            // Many users report OpenAI TTS cuts off the end of single words.
-            // Adding a period prompts the model to finish the sentence naturally without reading "dot".
             const apiInput = (text.length < 50 && !text.endsWith('.') && !text.endsWith('!') && !text.endsWith('?'))
                 ? `${text}.`
                 : text;
@@ -94,6 +99,12 @@ export async function speakWord(text, language, setSpeakingId, wordId, apiKey, o
     }
 
     try {
+        if (!response) {
+            useBrowserTTS();
+            setSpeakingId(null);
+            return;
+        }
+
         const audioBlob = await response.blob();
         const audioUrl = URL.createObjectURL(audioBlob);
 
@@ -102,8 +113,8 @@ export async function speakWord(text, language, setSpeakingId, wordId, apiKey, o
         if (onCacheUpdate) onCacheUpdate(cacheKey);
 
         const audio = new Audio(audioUrl);
-        await new Promise((resolve) => {
-            audio.onended = resolve;
+        await new Promise<void>((resolve) => {
+            audio.onended = () => resolve();
             audio.onerror = () => {
                 useBrowserTTS();
                 resolve();

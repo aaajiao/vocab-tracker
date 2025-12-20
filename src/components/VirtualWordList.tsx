@@ -2,6 +2,21 @@ import { useRef, memo } from 'react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import SwipeableCard from './SwipeableCard';
 import { Icons } from './Icons';
+import type { VirtualWordListProps, Word } from '../types';
+
+interface FlatListItem {
+    type: 'header' | 'word';
+    date?: string;
+    count?: number;
+    id?: string;
+    word?: string;
+    meaning?: string;
+    language?: 'en' | 'de';
+    example?: string;
+    exampleCn?: string;
+    category?: string;
+    timestamp?: number;
+}
 
 // Virtual Word List Component - uses window scroll for natural page scrolling
 function VirtualWordList({
@@ -9,11 +24,11 @@ function VirtualWordList({
     speakingId, apiKey, setCachedKeys, cachedKeys, getCategoryClass,
     getCategoryLabel, handleRegenerate, regeneratingId,
     saveSentence, unsaveSentence, isSentenceSaved, getSavedSentenceId, savingId
-}) {
-    const listRef = useRef(null);
+}: VirtualWordListProps) {
+    const listRef = useRef<HTMLDivElement>(null);
 
     // Flatten grouped data into a single list with date headers
-    const flatList = [];
+    const flatList: FlatListItem[] = [];
     Object.entries(groupedByDate)
         .sort(([a], [b]) => b.localeCompare(a))
         .forEach(([date, dateWords]) => {
@@ -56,13 +71,13 @@ function VirtualWordList({
                                 }}
                                 className="flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 pt-4"
                             >
-                                <Icons.Calendar /> {formatDate(item.date)}
+                                <Icons.Calendar /> {formatDate(item.date!)}
                                 <span className="text-xs opacity-60">({item.count})</span>
                             </div>
                         );
                     }
 
-                    const word = item;
+                    const word = item as unknown as Word;
                     return (
                         <div
                             key={word.id}
@@ -100,7 +115,7 @@ function VirtualWordList({
                                                 className={`p-2 rounded-lg active:scale-90 transition-all ${isSentenceSaved(word.example) ? 'text-amber-500' : 'text-slate-300 dark:text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30'}`}
                                                 onClick={() => {
                                                     if (isSentenceSaved(word.example)) {
-                                                        unsaveSentence(getSavedSentenceId(word.example));
+                                                        unsaveSentence(getSavedSentenceId(word.example)!);
                                                     } else {
                                                         saveSentence({
                                                             sentence: word.example,

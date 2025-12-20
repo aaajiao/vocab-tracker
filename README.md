@@ -108,6 +108,10 @@ This project requires a Supabase backend. Please refer to [SUPABASE_SETUP.md](./
 
 ### 📝 Changelog
 
+#### v1.3.0 (2025-12-20)
+- **📝 TypeScript Migration**: Full codebase migration to TypeScript for better type safety and IDE support.
+- **📦 Type Definitions**: Added comprehensive type definitions for all components and services.
+
 #### v1.2.0 (2025-12-20)
 - **🏗️ Code Refactoring**: Modularized codebase into components, services, and hooks.
 - **⚡ Performance**: Added `React.memo`, `useCallback`, and `useMemo` optimizations.
@@ -228,6 +232,10 @@ vocab-tracker/
 本项目需要 Supabase 后端支持。详细设置请参阅 [SUPABASE_SETUP.md](./SUPABASE_SETUP.md)。
 
 ### 📝 更新日志 (Changelog)
+
+#### v1.3.0 (2025-12-20)
+- **📝 TypeScript 迁移**: 全面迁移至 TypeScript，获得更好的类型安全和 IDE 支持。
+- **📦 类型定义**: 为所有组件和服务添加完整类型定义。
 
 #### v1.2.0 (2025-12-20)
 - **🏗️ 代码重构**: 模块化拆分代码为组件、服务和 Hooks，提升可维护性。

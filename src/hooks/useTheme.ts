@@ -2,8 +2,16 @@ import { useState, useEffect } from 'react';
 
 const THEME_STORAGE_KEY = 'vocab-theme';
 
-export function useTheme() {
-    const [theme, setTheme] = useState(() => {
+type Theme = 'light' | 'dark';
+
+interface UseThemeReturn {
+    theme: Theme;
+    setTheme: (theme: Theme) => void;
+    toggleTheme: () => void;
+}
+
+export function useTheme(): UseThemeReturn {
+    const [theme, setTheme] = useState<Theme>(() => {
         // First check localStorage for saved preference
         if (typeof window !== 'undefined') {
             const saved = localStorage.getItem(THEME_STORAGE_KEY);

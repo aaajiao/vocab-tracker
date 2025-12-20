@@ -1,17 +1,18 @@
 import { useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { Icons } from './Icons';
+import type { AuthFormProps } from '../types';
 
 // Auth Component
-function AuthForm({ onAuth }) {
-    const [view, setView] = useState('login'); // 'login', 'signup', 'forgot'
+function AuthForm({ onAuth }: AuthFormProps) {
+    const [view, setView] = useState<'login' | 'signup' | 'forgot'>('login');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [message, setMessage] = useState('');
 
-    const handleSubmit = async (e) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setError('');
@@ -32,7 +33,7 @@ function AuthForm({ onAuth }) {
                 if (error) throw error;
                 setMessage('重置链接已发送！请查看您的邮箱。');
             }
-        } catch (err) {
+        } catch (err: any) {
             setError(err.message);
         }
         setLoading(false);

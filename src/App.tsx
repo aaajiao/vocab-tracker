@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { supabase } from './supabaseClient';
+import type { User } from '@supabase/supabase-js';
+import type { Word, SavedSentence, SentenceData, SentenceInput } from './types';
 
 // Components
 import { Icons } from './components/Icons';
@@ -15,19 +17,28 @@ import { speakWord } from './services/tts';
 // Hooks
 import { useTheme } from './hooks/useTheme';
 
+interface NewWord {
+    word: string;
+    meaning: string;
+    language: 'en' | 'de';
+    example: string;
+    exampleCn: string;
+    category: string;
+}
+
 function App() {
-    const [user, setUser] = useState(null);
-    const [words, setWords] = useState([]);
-    const [activeTab, setActiveTab] = useState('all');
+    const [user, setUser] = useState<User | null>(null);
+    const [words, setWords] = useState<Word[]>([]);
+    const [activeTab, setActiveTab] = useState<'all' | 'en' | 'de' | 'saved'>('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [isAdding, setIsAdding] = useState(false);
-    const [newWord, setNewWord] = useState({ word: '', meaning: '', language: 'en', example: '', exampleCn: '', category: '' });
+    const [newWord, setNewWord] = useState<NewWord>({ word: '', meaning: '', language: 'en', example: '', exampleCn: '', category: '' });
     const [loading, setLoading] = useState(true);
     const [aiLoading, setAiLoading] = useState(false);
-    const [speakingId, setSpeakingId] = useState(null);
-    const [cachedKeys, setCachedKeys] = useState(new Set());
-    const [regeneratingId, setRegeneratingId] = useState(null);
-    const [apiKey, setApiKey] = useState(() => {
+    const [speakingId, setSpeakingId] = useState<string | null>(null);
+    const [cachedKeys, setCachedKeys] = useState<Set<string>>(new Set());
+    const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+    const [apiKey, setApiKey] = useState<string>(() => {
         const savedKey = localStorage.getItem('vocab-api-key');
         const wasDeleted = localStorage.getItem('vocab-api-key-deleted');
         if (savedKey) return savedKey;
@@ -41,16 +52,16 @@ function App() {
     const [showPasswordUpdate, setShowPasswordUpdate] = useState(false);
     const [newPassword, setNewPassword] = useState('');
     const [showSentence, setShowSentence] = useState(false);
-    const [sentenceData, setSentenceData] = useState(null);
+    const [sentenceData, setSentenceData] = useState<SentenceData | null>(null);
     const [sentenceLoading, setSentenceLoading] = useState(false);
-    const [savedSentences, setSavedSentences] = useState([]);
-    const [savingId, setSavingId] = useState(null);
+    const [savedSentences, setSavedSentences] = useState<SavedSentence[]>([]);
+    const [savingId, setSavingId] = useState<string | null>(null);
 
     // Undo state
-    const [deletedItem, setDeletedItem] = useState(null);
+    const [deletedItem, setDeletedItem] = useState<Word | null>(null);
 
-    const inputRef = useRef(null);
-    const aiTimeoutRef = useRef(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+    const aiTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const ignoreFetch = useRef(false);
 
     // Auth state listener
@@ -77,7 +88,7 @@ function App() {
     }, []);
 
     // Load words from Supabase
-    const loadWords = async (userId) => {
+    const loadWords = async (userId: string) => {
         setLoading(true);
         const { data, error } = await supabase
             .from('words')
@@ -88,7 +99,7 @@ function App() {
         if (error) {
             console.error('Load error:', error);
         } else {
-            const formatted = data.map(w => ({
+            const formatted: Word[] = (data || []).map((w: any) => ({
                 id: w.id,
                 word: w.word,
                 meaning: w.meaning,
@@ -109,7 +120,7 @@ function App() {
         setLoading(false);
     };
 
-    const loadSavedSentences = async (userId) => {
+    const loadSavedSentences = async (userId: string) => {
         const { data, error } = await supabase
             .from('saved_sentences')
             .select('*')
@@ -121,7 +132,7 @@ function App() {
         }
     };
 
-    const saveSentence = useCallback(async (sentenceObj) => {
+    const saveSentence = useCallback(async (sentenceObj: SentenceInput) => {
         if (!user) return;
         setSavingId(sentenceObj.sentence);
 
@@ -141,23 +152,23 @@ function App() {
         setSavingId(null);
     }, [user]);
 
-    const unsaveSentence = useCallback(async (id) => {
+    const unsaveSentence = useCallback(async (id: string) => {
         const { error } = await supabase.from('saved_sentences').delete().eq('id', id);
         if (!error) {
             setSavedSentences(prev => prev.filter(s => s.id !== id));
         }
     }, []);
 
-    const isSentenceSaved = useCallback((sentence) => {
+    const isSentenceSaved = useCallback((sentence: string) => {
         return savedSentences.some(s => s.sentence === sentence);
     }, [savedSentences]);
 
-    const getSavedSentenceId = useCallback((sentence) => {
+    const getSavedSentenceId = useCallback((sentence: string): string | null => {
         const found = savedSentences.find(s => s.sentence === sentence);
         return found ? found.id : null;
     }, [savedSentences]);
 
-    const migrateLocalStorage = async (userId) => {
+    const migrateLocalStorage = async (userId: string) => {
         const localData = localStorage.getItem('vocab-words-v4');
         if (!localData) return;
 
@@ -236,7 +247,7 @@ function App() {
         return () => { if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current); };
     }, [newWord.word, newWord.language, apiKey]);
 
-    const handleRegenerate = useCallback(async (wordId) => {
+    const handleRegenerate = useCallback(async (wordId: string) => {
         const word = words.find(w => w.id === wordId);
         if (!word || !apiKey) return;
         setRegeneratingId(wordId);
@@ -319,7 +330,7 @@ function App() {
         setSyncing(false);
     };
 
-    const deleteWord = useCallback(async (id) => {
+    const deleteWord = useCallback(async (id: string) => {
         if (!user) return;
 
         // Store deleted word for undo
@@ -393,9 +404,9 @@ function App() {
         if (!acc[word.date]) acc[word.date] = [];
         acc[word.date].push(word);
         return acc;
-    }, {}), [filteredWords]);
+    }, {} as Record<string, Word[]>), [filteredWords]);
 
-    const formatDate = useCallback((d) => {
+    const formatDate = useCallback((d: string) => {
         const today = new Date().toLocaleDateString('sv-SE');
         const yesterday = new Date(Date.now() - 86400000).toLocaleDateString('sv-SE');
         if (d === today) return '今天';
@@ -403,8 +414,8 @@ function App() {
         return new Date(d).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
     }, []);
 
-    const getCategoryClass = useCallback((cat) => {
-        const map = {
+    const getCategoryClass = useCallback((cat: string) => {
+        const map: Record<string, string> = {
             daily: 'bg-green-50 text-green-600 dark:bg-green-500/10 dark:text-green-400',
             professional: 'bg-purple-50 text-purple-600 dark:bg-purple-500/10 dark:text-purple-400',
             formal: 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400'
@@ -412,8 +423,8 @@ function App() {
         return map[cat] || 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400';
     }, []);
 
-    const getCategoryLabel = useCallback((cat) => {
-        const map = { daily: '日常', professional: '专业', formal: '正式' };
+    const getCategoryLabel = useCallback((cat: string) => {
+        const map: Record<string, string> = { daily: '日常', professional: '专业', formal: '正式' };
         return map[cat] || '';
     }, []);
 
@@ -635,7 +646,7 @@ function App() {
 
             {/* Tabs */}
             <div className="flex gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl mb-6">
-                {[{ id: 'all', label: '全部' }, { id: 'en', label: '🇬🇧 英语' }, { id: 'de', label: '🇩🇪 德语' }, { id: 'saved', label: '⭐ 收藏' }].map(t => (
+                {[{ id: 'all' as const, label: '全部' }, { id: 'en' as const, label: '🇬🇧 英语' }, { id: 'de' as const, label: '🇩🇪 德语' }, { id: 'saved' as const, label: '⭐ 收藏' }].map(t => (
                     <button
                         key={t.id}
                         className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === t.id
@@ -721,12 +732,12 @@ function App() {
                                                 }`}
                                             onClick={() => {
                                                 if (isSentenceSaved(sentenceData.sentence)) {
-                                                    unsaveSentence(getSavedSentenceId(sentenceData.sentence));
+                                                    unsaveSentence(getSavedSentenceId(sentenceData.sentence)!);
                                                 } else {
                                                     saveSentence({
                                                         sentence: sentenceData.sentence,
                                                         sentenceCn: sentenceData.sentenceCn,
-                                                        language: activeTab,
+                                                        language: activeTab as 'en' | 'de',
                                                         scene: sentenceData.scene,
                                                         sourceType: 'combined',
                                                         sourceWords: sentenceData.words.map(w => w.word)

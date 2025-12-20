@@ -1,7 +1,8 @@
 // OpenAI API service functions
+import type { AIContent, DetectedContent, RegeneratedExample, CombinedSentence, Word } from '../types';
 
 // Get translation and contextual example
-export async function getAIContent(text, sourceLang, apiKey) {
+export async function getAIContent(text: string, sourceLang: string, apiKey: string): Promise<AIContent | null> {
     try {
         const langName = sourceLang === 'en' ? 'English' : 'German';
         const response = await fetch("/api/openai/v1/chat/completions", {
@@ -53,7 +54,7 @@ Respond in this exact JSON format only, no other text:
 }
 
 // Detect language and get content
-export async function detectAndGetContent(text, apiKey) {
+export async function detectAndGetContent(text: string, apiKey: string): Promise<DetectedContent | null> {
     try {
         const response = await fetch("/api/openai/v1/chat/completions", {
             method: "POST",
@@ -98,7 +99,7 @@ Respond in this exact JSON format only:
 }
 
 // Regenerate example
-export async function regenerateExample(word, meaning, sourceLang, apiKey) {
+export async function regenerateExample(word: string, meaning: string, sourceLang: string, apiKey: string): Promise<RegeneratedExample | null> {
     try {
         const langName = sourceLang === 'en' ? 'English' : 'German';
         const response = await fetch("/api/openai/v1/chat/completions", {
@@ -141,7 +142,7 @@ Respond in this exact JSON format only:
 }
 
 // Generate combined sentence using multiple words
-export async function generateCombinedSentence(selectedWords, language, apiKey) {
+export async function generateCombinedSentence(selectedWords: Word[], language: string, apiKey: string): Promise<CombinedSentence | null> {
     try {
         const langName = language === 'en' ? 'English' : 'German';
         const wordList = selectedWords.map(w => {

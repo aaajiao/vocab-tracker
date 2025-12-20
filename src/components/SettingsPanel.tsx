@@ -1,6 +1,7 @@
+import type { SettingsPanelProps } from '../types';
 import { Icons } from './Icons';
 
-function SettingsPanel({ apiKey, setApiKey, userEmail }) {
+function SettingsPanel({ apiKey, setApiKey, userEmail }: SettingsPanelProps) {
     return (
         <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4 mb-6">
             <h3 className="text-sm font-semibold mb-2 text-slate-800 dark:text-slate-100">Settings</h3>

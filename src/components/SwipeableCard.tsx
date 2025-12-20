@@ -1,27 +1,28 @@
 import { useState, useRef, memo } from 'react';
 import { Icons } from './Icons';
+import type { SwipeableCardProps } from '../types';
 
 // Swipeable Card Component - touch swipe on mobile, hover delete on desktop
-function SwipeableCard({ children, onDelete, className }) {
+function SwipeableCard({ children, onDelete, className }: SwipeableCardProps) {
     const [offset, setOffset] = useState(0);
     const [swiping, setSwiping] = useState(false);
     const [hovering, setHovering] = useState(false);
-    const [swipeDirection, setSwipeDirection] = useState(null); // 'horizontal' | 'vertical' | null
+    const [swipeDirection, setSwipeDirection] = useState<'horizontal' | 'vertical' | null>(null);
     const startX = useRef(0);
     const startY = useRef(0);
     const currentX = useRef(0);
     const currentY = useRef(0);
 
-    const handleTouchStart = (e) => {
+    const handleTouchStart = (e: React.TouchEvent) => {
         startX.current = e.touches[0].clientX;
         startY.current = e.touches[0].clientY;
         currentX.current = startX.current;
         currentY.current = startY.current;
         setSwiping(true);
-        setSwipeDirection(null); // Reset direction lock
+        setSwipeDirection(null);
     };
 
-    const handleTouchMove = (e) => {
+    const handleTouchMove = (e: React.TouchEvent) => {
         if (!swiping) return;
 
         currentX.current = e.touches[0].clientX;
@@ -48,7 +49,7 @@ function SwipeableCard({ children, onDelete, className }) {
 
     const handleTouchEnd = () => {
         setSwiping(false);
-        setSwipeDirection(null); // Reset direction lock
+        setSwipeDirection(null);
 
         if (offset < -60) {
             setOffset(-100);

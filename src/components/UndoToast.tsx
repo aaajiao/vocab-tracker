@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
+import type { UndoToastProps } from '../types';
 
 // UndoToast Component - Shows after delete with undo option
-function UndoToast({ deletedItem, onUndo, onDismiss, duration = 5000 }) {
+function UndoToast({ deletedItem, onUndo, onDismiss, duration = 5000 }: UndoToastProps) {
     const [visible, setVisible] = useState(true);
     const [progress, setProgress] = useState(100);
 
