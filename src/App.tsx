@@ -9,7 +9,6 @@ import SettingsPanel from './components/SettingsPanel';
 import UndoToast from './components/UndoToast';
 import ToastContainer from './components/ToastContainer';
 import SwipeableSentenceCard from './components/SwipeableSentenceCard';
-import SentenceUndoToast from './components/SentenceUndoToast';
 
 // Services
 import { getAIContent, detectAndGetContent, regenerateExample, generateCombinedSentence } from './services/openai';
@@ -22,6 +21,7 @@ import { useWords } from './hooks/useWords';
 import { useSentences } from './hooks/useSentences';
 import { useDebounce } from './hooks/useDebounce';
 import { useToast } from './hooks/useToast';
+import { useUndo } from './hooks/useUndo';
 
 interface NewWord {
     word: string;
@@ -37,6 +37,7 @@ function App() {
     const { theme, toggleTheme } = useTheme();
     const { user, loading: authLoading, showPasswordUpdate, setShowPasswordUpdate, logout } = useAuth();
     const { toasts, showToast, dismissToast } = useToast();
+    const { deletedItem, markDeleted, handleUndo, dismiss: dismissUndo } = useUndo();
 
     const {
         words, loading: wordsLoading, syncing,
@@ -72,8 +73,6 @@ function App() {
     const [showSentence, setShowSentence] = useState(false);
     const [sentenceData, setSentenceData] = useState<SentenceData | null>(null);
     const [sentenceLoading, setSentenceLoading] = useState(false);
-    const [deletedItem, setDeletedItem] = useState<Word | null>(null);
-    const [deletedSentence, setDeletedSentence] = useState<SavedSentence | null>(null);
 
     const inputRef = useRef<HTMLInputElement>(null);
     const aiTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -184,36 +183,26 @@ function App() {
     const handleDeleteWord = useCallback(async (id: string) => {
         const deleted = await deleteWord(id);
         if (deleted) {
-            setDeletedItem(deleted);
+            markDeleted({
+                id: deleted.id,
+                type: 'word',
+                label: deleted.word,
+                restore: async () => { await restoreWord(deleted); }
+            });
         }
-    }, [deleteWord]);
-
-    const handleUndo = useCallback(async () => {
-        if (!deletedItem) return;
-        await restoreWord(deletedItem);
-        setDeletedItem(null);
-    }, [deletedItem, restoreWord]);
-
-    const handleUndoDismiss = useCallback(() => {
-        setDeletedItem(null);
-    }, []);
+    }, [deleteWord, markDeleted, restoreWord]);
 
     const handleDeleteSentence = useCallback(async (id: string) => {
         const deleted = await unsaveSentence(id);
         if (deleted) {
-            setDeletedSentence(deleted);
+            markDeleted({
+                id: deleted.id,
+                type: 'sentence',
+                label: deleted.sentence,
+                restore: async () => { await restoreSentence(deleted); }
+            });
         }
-    }, [unsaveSentence]);
-
-    const handleUndoSentence = useCallback(async () => {
-        if (!deletedSentence) return;
-        await restoreSentence(deletedSentence);
-        setDeletedSentence(null);
-    }, [deletedSentence, restoreSentence]);
-
-    const handleSentenceUndoDismiss = useCallback(() => {
-        setDeletedSentence(null);
-    }, []);
+    }, [unsaveSentence, markDeleted, restoreSentence]);
 
     // Computed values with debounced search
     const filteredWords = useMemo(() =>
@@ -684,21 +673,12 @@ function App() {
                 <Icons.Cloud /> 数据已同步到云端 · 点击单词听发音
             </div>
 
-            {/* Undo Toast for Words */}
+            {/* Unified Undo Toast */}
             <UndoToast
                 deletedItem={deletedItem}
                 onUndo={handleUndo}
-                onDismiss={handleUndoDismiss}
+                onDismiss={dismissUndo}
             />
-
-            {/* Undo Toast for Sentences - reuse same component concept inline */}
-            {deletedSentence && (
-                <SentenceUndoToast
-                    sentence={deletedSentence.sentence}
-                    onUndo={handleUndoSentence}
-                    onDismiss={handleSentenceUndoDismiss}
-                />
-            )}
         </div>
     );
 }

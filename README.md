@@ -108,6 +108,10 @@ This project requires a Supabase backend. Please refer to [SUPABASE_SETUP.md](./
 
 ### 📝 Changelog
 
+#### v1.4.2 (2025-12-21)
+- **↩️ Unified Undo System**: Combined word and sentence undo into a single `useUndo` hook + generic `UndoToast`.
+- **✨ Sentence Undo**: Now can undo when removing saved sentences.
+
 #### v1.4.1 (2025-12-21)
 - **📱 Swipe Delete for Saved Sentences**: Mobile users can now swipe to remove saved sentences.
 - **🖱️ Smart Device Detection**: Uses hover capability detection instead of screen width for desktop/mobile UI.
@@ -241,6 +245,10 @@ vocab-tracker/
 本项目需要 Supabase 后端支持。详细设置请参阅 [SUPABASE_SETUP.md](./SUPABASE_SETUP.md)。
 
 ### 📝 更新日志 (Changelog)
+
+#### v1.4.2 (2025-12-21)
+- **↩️ 统一撤销系统**: 将单词和句子的撤销合并为单一的 `useUndo` Hook + 通用 `UndoToast`。
+- **✨ 句子撤销**: 移除收藏句子时现在可以撤销。
 
 #### v1.4.1 (2025-12-21)
 - **📱 收藏句子滑动删除**: 移动端用户可以滑动删除收藏的句子。
