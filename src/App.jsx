@@ -603,6 +603,7 @@ function AuthForm({ onAuth }) {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         required
+                        autoComplete="username"
                     />
                     {view !== 'forgot' && (
                         <input
