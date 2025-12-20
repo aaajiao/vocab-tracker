@@ -194,4 +194,25 @@ graph TD
 应用首次登录时会自动将 LocalStorage 中的数据迁移到云端。
 
 ### Q: 忘记密码邮件没有收到？
-检查 **Authentication** → **Email Templates** 配置，确保模板正确设置。
+
+这是 Supabase 开发中常见的问题，请按以下步骤排查：
+
+1.  **检查垃圾邮件箱**：这是最常见的情况，Supabase 默认发送者经常被识别为垃圾邮件。
+2.  **检查 Supabase 日志**：
+    - 进入 **Authentication** → **Logs**。
+    - 检查是否有错误信息。如果显示 `Email rate limit exceeded`，说明触发了频率限制。
+3.  **频率限制 (Rate Limits)**：
+    - Supabase 免费版默认每小时只能发送 **3 封** 认证相关邮件。
+    - 如果你测试时短时间内点击多次，后面的邮件将不会发出。
+4.  **检查 Email Templates**：
+    - 进入 **Authentication** → **Email Templates** → **Reset Password**。
+    - 确保它处于 **Enabled** 状态。
+    - 检查 `Confirm Reset Password` 模板内容，确保没有误删 `{{ .ConfirmationURL }}`。
+5.  **自定义 SMTP (高级解决方案)**：
+    - Supabase 默认的邮件服务主要用于开发测试，到达率不稳定。
+    - 在生产环境中，建议配置自己的 SMTP（如 SendGrid, Resend, 或阿里、腾讯的企业邮箱）。进入 **Settings** → **Auth** → **SMTP Settings** 进行配置。
+
+### Q: 点击邮件中的链接没有反应，或者报错？
+- 确认 **Authentication** → **URL Configuration** 中的 `Redirect URLs` 必须配置正确。
+- 开发测试请确保添加了 `http://localhost:5173/**`。
+- 生产环境请确保添加了 `https://your-domain.vercel.app/**`。

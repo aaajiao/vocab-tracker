@@ -702,7 +702,7 @@ function App() {
         // 如果用户明确删除了，不使用环境变量
         if (wasDeleted) return '';
         // 否则使用环境变量
-        return import.meta.env.VITE_ANTHROPIC_API_KEY || '';
+        return import.meta.env.VITE_OPENAI_API_KEY || '';
     });
     const [showSettings, setShowSettings] = useState(false);
     const [syncing, setSyncing] = useState(false);
