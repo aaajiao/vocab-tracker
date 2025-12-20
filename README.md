@@ -182,7 +182,15 @@ npm run build
 npm run preview
 ```
 
-## 🌐 Supabase 生产环境配置
+## 🌐 Supabase 配置
+
+### 首次设置
+
+如果你是首次部署此项目，需要在 Supabase 中创建数据库表。
+
+👉 **详细指南请参阅 [SUPABASE_SETUP.md](./SUPABASE_SETUP.md)**
+
+### 生产环境配置
 
 项目上线发布后，为确保**邮件重置密码**功能正常跳转，需在 Supabase 后台完成以下配置：
 
