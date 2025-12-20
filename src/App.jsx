@@ -1,710 +1,19 @@
-import { useState, useEffect, useRef } from 'react';
-import { useWindowVirtualizer } from '@tanstack/react-virtual';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { supabase } from './supabaseClient';
 
-// Icons
-const Icons = {
-    Book: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" /></svg>,
-    Plus: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>,
-    Trash: () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></svg>,
-    Search: () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>,
-    Calendar: () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2" /><line x1="16" x2="16" y1="2" y2="6" /><line x1="8" x2="8" y1="2" y2="6" /><line x1="3" x2="21" y1="10" y2="10" /></svg>,
-    Download: () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" /></svg>,
-    Speaker: ({ playing, cached }) => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill={cached ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />{playing ? <><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14" /></> : <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />}</svg>,
-    Sparkles: () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" /><path d="M5 3v4" /><path d="M19 17v4" /><path d="M3 5h4" /><path d="M17 19h4" /></svg>,
-    Refresh: () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" /><path d="M16 16h5v5" /></svg>,
-    Settings: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z" /></svg>,
-    LogOut: () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" x2="9" y1="12" y2="12" /></svg>,
-    Cloud: () => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" /></svg>,
-    Moon: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg>,
-    Sun: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>,
-    Star: ({ filled }) => <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
-};
-
-// Swipeable Card Component - touch swipe on mobile, hover delete on desktop
-function SwipeableCard({ children, onDelete, className }) {
-    const [offset, setOffset] = useState(0);
-    const [swiping, setSwiping] = useState(false);
-    const [hovering, setHovering] = useState(false);
-    const [swipeDirection, setSwipeDirection] = useState(null); // 'horizontal' | 'vertical' | null
-    const startX = useRef(0);
-    const startY = useRef(0);
-    const currentX = useRef(0);
-    const currentY = useRef(0);
-
-    const handleTouchStart = (e) => {
-        startX.current = e.touches[0].clientX;
-        startY.current = e.touches[0].clientY;
-        currentX.current = startX.current;
-        currentY.current = startY.current;
-        setSwiping(true);
-        setSwipeDirection(null); // Reset direction lock
-    };
-
-    const handleTouchMove = (e) => {
-        if (!swiping) return;
-
-        currentX.current = e.touches[0].clientX;
-        currentY.current = e.touches[0].clientY;
-
-        const diffX = currentX.current - startX.current;
-        const diffY = currentY.current - startY.current;
-
-        // Dead zone: ignore movements less than 10px
-        const totalMove = Math.sqrt(diffX * diffX + diffY * diffY);
-        if (totalMove < 10) return;
-
-        // Direction locking: determine direction on first significant move
-        if (swipeDirection === null) {
-            const angle = Math.atan2(Math.abs(diffY), Math.abs(diffX)) * 180 / Math.PI;
-            setSwipeDirection(angle < 30 ? 'horizontal' : 'vertical');
-        }
-
-        // Only update offset for horizontal swipes
-        if (swipeDirection === 'horizontal' && diffX < 0) {
-            setOffset(Math.max(diffX, -100));
-        }
-    };
-
-    const handleTouchEnd = () => {
-        setSwiping(false);
-        setSwipeDirection(null); // Reset direction lock
-
-        if (offset < -60) {
-            setOffset(-100);
-            setTimeout(() => onDelete(), 200);
-        } else {
-            setOffset(0);
-        }
-    };
-
-    return (
-        <div
-            className="relative overflow-hidden rounded-xl mb-3"
-            onMouseEnter={() => setHovering(true)}
-            onMouseLeave={() => setHovering(false)}
-        >
-            {/* Swipe delete background (mobile) */}
-            <div
-                className="absolute inset-y-0 right-0 w-24 bg-red-500 flex items-center justify-center text-white"
-                style={{ opacity: Math.min(1, Math.abs(offset) / 60) }}
-            >
-                <Icons.Trash />
-                <span className="ml-1 text-sm font-medium">删除</span>
-            </div>
-            <div
-                className={className}
-                style={{
-                    transform: `translateX(${offset}px)`,
-                    transition: swiping ? 'none' : 'transform 0.2s ease-out'
-                }}
-                onTouchStart={handleTouchStart}
-                onTouchMove={handleTouchMove}
-                onTouchEnd={handleTouchEnd}
-            >
-                <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1">
-                        {children}
-                    </div>
-                    {/* Desktop delete button (hover) */}
-                    <button
-                        className={`p-2.5 rounded-lg text-slate-300 dark:text-slate-600 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 active:scale-90 transition-all hidden sm:block ${hovering ? 'opacity-100' : 'opacity-0'}`}
-                        onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                    >
-                        <Icons.Trash />
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-// Virtual Word List Component - uses window scroll for natural page scrolling
-function VirtualWordList({
-    groupedByDate, formatDate, deleteWord, speakWord, setSpeakingId,
-    speakingId, apiKey, setCachedKeys, cachedKeys, getCategoryClass,
-    getCategoryLabel, handleRegenerate, regeneratingId,
-    saveSentence, unsaveSentence, isSentenceSaved, getSavedSentenceId, savingId
-}) {
-    const listRef = useRef(null);
-
-    // Flatten grouped data into a single list with date headers
-    const flatList = [];
-    Object.entries(groupedByDate)
-        .sort(([a], [b]) => b.localeCompare(a))
-        .forEach(([date, dateWords]) => {
-            flatList.push({ type: 'header', date, count: dateWords.length });
-            dateWords.sort((a, b) => b.timestamp - a.timestamp)
-                .forEach(word => flatList.push({ type: 'word', ...word }));
-        });
-
-    const virtualizer = useWindowVirtualizer({
-        count: flatList.length,
-        estimateSize: (index) => flatList[index]?.type === 'header' ? 48 : 180,
-        overscan: 5,
-        scrollMargin: listRef.current?.offsetTop ?? 0,
-    });
-
-    return (
-        <div ref={listRef}>
-            <div
-                style={{
-                    height: `${virtualizer.getTotalSize()}px`,
-                    width: '100%',
-                    position: 'relative',
-                }}
-            >
-                {virtualizer.getVirtualItems().map((virtualRow) => {
-                    const item = flatList[virtualRow.index];
-                    if (!item) return null;
-
-                    if (item.type === 'header') {
-                        return (
-                            <div
-                                key={`header-${item.date}`}
-                                style={{
-                                    position: 'absolute',
-                                    top: 0,
-                                    left: 0,
-                                    width: '100%',
-                                    height: `${virtualRow.size}px`,
-                                    transform: `translateY(${virtualRow.start - (virtualizer.options.scrollMargin || 0)}px)`,
-                                }}
-                                className="flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 pt-4"
-                            >
-                                <Icons.Calendar /> {formatDate(item.date)}
-                                <span className="text-xs opacity-60">({item.count})</span>
-                            </div>
-                        );
-                    }
-
-                    const word = item;
-                    return (
-                        <div
-                            key={word.id}
-                            style={{
-                                position: 'absolute',
-                                top: 0,
-                                left: 0,
-                                width: '100%',
-                                transform: `translateY(${virtualRow.start - (virtualizer.options.scrollMargin || 0)}px)`,
-                            }}
-                        >
-                            <SwipeableCard
-                                onDelete={() => deleteWord(word.id)}
-                                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 hover:border-blue-300 dark:hover:border-blue-700 transition-all group shadow-sm"
-                            >
-                                <div className="flex flex-wrap items-center gap-2 mb-1">
-                                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${word.language === 'en' ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400' : 'bg-green-50 text-green-600 dark:bg-green-900/20 dark:text-green-400'}`}>
-                                        {word.language === 'en' ? '🇬🇧' : '🇩🇪'}
-                                    </span>
-                                    {word.category && <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getCategoryClass(word.category)}`}>{getCategoryLabel(word.category)}</span>}
-                                    <span className="text-lg font-bold text-slate-800 dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer inline-flex items-center gap-1 transition-colors" onClick={() => speakWord(word.word, word.language, setSpeakingId, word.id, apiKey, (key) => setCachedKeys(prev => new Set(prev).add(key)))}>
-                                        {word.word}
-                                        <button className={`p-1.5 rounded-full hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 active:scale-90 transition-all ${speakingId === word.id ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/30 animate-pulse-ring' : (cachedKeys.has(`${word.language}:${word.word}`) ? 'text-blue-400/80 dark:text-blue-400/60' : 'text-slate-400')}`}>
-                                            <Icons.Speaker playing={speakingId === word.id} cached={cachedKeys.has(`${word.language}:${word.word}`)} />
-                                        </button>
-                                    </span>
-                                </div>
-                                <div className="text-sm text-slate-600 dark:text-slate-300 mb-2 font-medium">{word.meaning}</div>
-                                {word.example && (
-                                    <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 relative group/example">
-                                        <div className="text-sm text-slate-700 dark:text-slate-300 mb-0.5 pr-14">{word.example}</div>
-                                        <div className="text-xs text-slate-500 dark:text-slate-400">{word.exampleCn}</div>
-                                        <div className="absolute top-2 right-2 flex gap-1">
-                                            <button
-                                                className={`p-2 rounded-lg active:scale-90 transition-all ${isSentenceSaved(word.example) ? 'text-amber-500' : 'text-slate-300 dark:text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30'}`}
-                                                onClick={() => {
-                                                    if (isSentenceSaved(word.example)) {
-                                                        unsaveSentence(getSavedSentenceId(word.example));
-                                                    } else {
-                                                        saveSentence({
-                                                            sentence: word.example,
-                                                            sentenceCn: word.exampleCn,
-                                                            language: word.language,
-                                                            scene: null,
-                                                            sourceType: 'word',
-                                                            sourceWords: [word.word]
-                                                        });
-                                                    }
-                                                }}
-                                                disabled={savingId === word.example}
-                                                title={isSentenceSaved(word.example) ? '取消收藏' : '收藏例句'}
-                                            >
-                                                <Icons.Star filled={isSentenceSaved(word.example)} />
-                                            </button>
-                                            <button className={`p-2 rounded-lg text-slate-300 dark:text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 active:scale-90 transition-all ${regeneratingId === word.id ? 'animate-spin text-amber-600' : ''}`} onClick={() => handleRegenerate(word.id)} title="重新生成例句"><Icons.Refresh /></button>
-                                        </div>
-                                    </div>
-                                )}
-                            </SwipeableCard>
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    );
-}
-
-// OpenAI - Get translation and contextual example
-async function getAIContent(text, sourceLang, apiKey) {
-    try {
-        const langName = sourceLang === 'en' ? 'English' : 'German';
-        const response = await fetch("/api/openai/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-                model: "gpt-4o-mini",
-                max_tokens: 300,
-                messages: [
-                    { role: "system", content: "You are a translation assistant. Always respond with valid JSON only." },
-                    {
-                        role: "user",
-                        content: `For this ${langName} word/phrase: "${text}"
-
-Please provide:
-1. Chinese translation (concise, include article for German nouns)
-2. One example sentence in ${langName} with Chinese translation
-
-IMPORTANT: Match the example to the word's nature:
-- If it's an everyday/casual word (like "cool", "hang out", "Gemütlich"), use a casual, daily-life context
-- If it's a technical/professional term (like "algorithm", "Rechtsprechung", "derivative"), use an appropriate professional/academic context
-- If it's formal vocabulary, use formal context
-
-Respond in this exact JSON format only, no other text:
-{"translation": "中文翻译", "example": "Example sentence", "exampleCn": "例句中文翻译", "category": "daily|professional|formal"}`
-                    }
-                ]
-            })
-        });
-
-        const data = await response.json();
-        if (data.error) {
-            console.error('API Error', data.error);
-            return null;
-        }
-
-        if (data.choices && data.choices[0] && data.choices[0].message) {
-            const jsonStr = data.choices[0].message.content.trim().replace(/```json\n?|\n?```/g, '').trim();
-            return JSON.parse(jsonStr);
-        }
-        return null;
-    } catch (e) {
-        console.error('OpenAI API error:', e);
-        return null;
-    }
-}
-
-// OpenAI - Detect language and get content
-async function detectAndGetContent(text, apiKey) {
-    try {
-        const response = await fetch("/api/openai/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-                model: "gpt-4o-mini",
-                max_tokens: 300,
-                messages: [
-                    { role: "system", content: "You are a translation assistant. Always respond with valid JSON only." },
-                    {
-                        role: "user",
-                        content: `Analyze this word/phrase: "${text}"
-
-1. Detect whether it is primarily English or German.
-2. Provide Chinese translation (concise).
-3. Provide one example sentence in the detected language with Chinese translation.
-
-IMPORTANT: Match the example to the word's nature (daily/professional/formal).
-
-Respond in this exact JSON format only:
-{"language": "en|de", "translation": "中文翻译", "example": "Example sentence", "exampleCn": "例句中文翻译", "category": "daily|professional|formal"}`
-                    }
-                ]
-            })
-        });
-
-        const data = await response.json();
-        if (data.error) return null;
-
-        if (data.choices && data.choices[0] && data.choices[0].message) {
-            const jsonStr = data.choices[0].message.content.trim().replace(/```json\n?|\n?```/g, '').trim();
-            return JSON.parse(jsonStr);
-        }
-        return null;
-    } catch (e) {
-        console.error('Detection error:', e);
-        return null;
-    }
-}
-
-// Regenerate example
-async function regenerateExample(word, meaning, sourceLang, apiKey) {
-    try {
-        const langName = sourceLang === 'en' ? 'English' : 'German';
-        const response = await fetch("/api/openai/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-                model: "gpt-4o-mini",
-                max_tokens: 200,
-                messages: [
-                    { role: "system", content: "You are a translation assistant. Always respond with valid JSON only." },
-                    {
-                        role: "user",
-                        content: `Generate a NEW, different example sentence for this ${langName} word: "${word}" (meaning: ${meaning})
-
-Match the context to the word's nature:
-- Everyday words → casual, daily-life scenarios
-- Technical terms → professional/academic context
-- Formal words → formal context
-
-Respond in this exact JSON format only:
-{"example": "New example sentence in ${langName}", "exampleCn": "例句中文翻译"}`
-                    }
-                ]
-            })
-        });
-
-        const data = await response.json();
-        if (data.choices && data.choices[0] && data.choices[0].message) {
-            const jsonStr = data.choices[0].message.content.trim().replace(/```json\n?|\n?```/g, '').trim();
-            return JSON.parse(jsonStr);
-        }
-        return null;
-    } catch (e) {
-        console.error('Regenerate error:', e);
-        return null;
-    }
-}
-
-// Generate combined sentence using multiple words
-async function generateCombinedSentence(selectedWords, language, apiKey) {
-    try {
-        const langName = language === 'en' ? 'English' : 'German';
-        const wordList = selectedWords.map(w => {
-            const cat = w.category ? ` [${w.category}]` : '';
-            return `"${w.word}" (${w.meaning})${cat}`;
-        }).join(', ');
-
-        const response = await fetch("/api/openai/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-                model: "gpt-4o-mini",
-                max_tokens: 400,
-                messages: [
-                    { role: "system", content: "You are a language learning assistant. Always respond with valid JSON only." },
-                    {
-                        role: "user",
-                        content: `Create a natural, grammatically correct ${langName} sentence that uses ALL of these words/phrases: ${wordList}
-
-Requirements:
-- The sentence must use each word correctly according to its meaning
-- The sentence should be natural and make logical sense
-- Keep the sentence concise but meaningful
-- Choose an appropriate scene/context based on the word categories (daily, professional, formal)
-
-Respond in this exact JSON format only:
-{"scene": "场景名称（如：日常对话/职场交流/正式写作/学术讨论等，用中文）", "sentence": "The ${langName} sentence", "sentenceCn": "中文翻译"}`
-                    }
-                ]
-            })
-        });
-
-        const data = await response.json();
-        if (data.error) {
-            console.error('API Error', data.error);
-            return null;
-        }
-
-        if (data.choices && data.choices[0] && data.choices[0].message) {
-            const jsonStr = data.choices[0].message.content.trim().replace(/```json\n?|\n?```/g, '').trim();
-            return JSON.parse(jsonStr);
-        }
-        return null;
-    } catch (e) {
-        console.error('Generate sentence error:', e);
-        return null;
-    }
-}
-
-// Audio Cache to save bandwidth and make repeated plays instant
-const audioCache = new Map();
-
-// TTS - OpenAI Text-to-Speech
-async function speakWord(text, language, setSpeakingId, wordId, apiKey, onCacheUpdate) {
-    setSpeakingId(wordId);
-
-    // Cache key
-    const cacheKey = `${language}:${text}`;
-
-    // Fallback to browser speech synthesis
-    const useBrowserTTS = () => {
-        if ('speechSynthesis' in window) {
-            window.speechSynthesis.cancel();
-            const u = new SpeechSynthesisUtterance(text);
-            u.lang = language === 'en' ? 'en-US' : 'de-DE';
-            u.rate = 0.85;
-            window.speechSynthesis.speak(u);
-        }
-    };
-
-    // Check cache first
-    if (audioCache.has(cacheKey)) {
-        try {
-            const audio = new Audio(audioCache.get(cacheKey));
-            await audio.play();
-            setSpeakingId(null);
-            return;
-        } catch (e) {
-            console.error('Cache playback failed:', e);
-            audioCache.delete(cacheKey); // Clear bad cache
-        }
-    }
-
-    // If no API key, use browser TTS
-    if (!apiKey) {
-        useBrowserTTS();
-        setSpeakingId(null);
-        return;
-    }
-
-    // Try with retry logic (Exponential Backoff)
-    let retries = 0;
-    const maxRetries = 3;
-    let response;
-
-    while (retries <= maxRetries) {
-        try {
-            // Optimization: Add period to short words to prevent cutoff
-            // Many users report OpenAI TTS cuts off the end of single words.
-            // Adding a period prompts the model to finish the sentence naturally without reading "dot".
-            const apiInput = (text.length < 50 && !text.endsWith('.') && !text.endsWith('!') && !text.endsWith('?'))
-                ? `${text}.`
-                : text;
-
-            response = await fetch('/api/openai/v1/audio/speech', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`
-                },
-                body: JSON.stringify({
-                    model: 'gpt-4o-mini-tts',
-                    voice: 'nova',
-                    input: apiInput,
-                    speed: 0.9
-                }),
-                signal: AbortSignal.timeout(10000) // 10s timeout
-            });
-
-            if (response.ok) break;
-
-            // If we're here, response was not OK
-            const errorData = await response.json().catch(() => ({}));
-            console.warn(`TTS attempt ${retries + 1} failed (${response.status}):`, errorData);
-
-            // Wait with exponential backoff: 500ms, 1000ms, 2000ms
-            const delay = 500 * Math.pow(2, retries);
-            await new Promise(r => setTimeout(r, delay));
-        } catch (e) {
-            console.warn(`TTS network attempt ${retries + 1} failed:`, e);
-            const delay = 500 * Math.pow(2, retries);
-            await new Promise(r => setTimeout(r, delay));
-        }
-
-        retries++;
-        if (retries > maxRetries) {
-            useBrowserTTS();
-            setSpeakingId(null);
-            return;
-        }
-    }
-
-    try {
-        const audioBlob = await response.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
-
-        // Save to cache for next time
-        audioCache.set(cacheKey, audioUrl);
-        if (onCacheUpdate) onCacheUpdate(cacheKey);
-
-        const audio = new Audio(audioUrl);
-        await new Promise((resolve) => {
-            audio.onended = resolve;
-            audio.onerror = () => {
-                useBrowserTTS();
-                resolve();
-            };
-            audio.play().catch((err) => {
-                console.error('Playback error:', err);
-                useBrowserTTS();
-                resolve();
-            });
-        });
-    } catch (e) {
-        console.error('Final TTS processing error:', e);
-        useBrowserTTS();
-    }
-    setSpeakingId(null);
-}
-
-// Auth Component
-function AuthForm({ onAuth }) {
-    const [view, setView] = useState('login'); // 'login', 'signup', 'forgot'
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
-    const [message, setMessage] = useState('');
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        setLoading(true);
-        setError('');
-        setMessage('');
-
-        try {
-            if (view === 'login') {
-                const { error } = await supabase.auth.signInWithPassword({ email, password });
-                if (error) throw error;
-            } else if (view === 'signup') {
-                const { error } = await supabase.auth.signUp({ email, password });
-                if (error) throw error;
-                setMessage('注册成功！请查看邮箱确认链接。');
-                // Don't switch view, let them see the message
-            } else if (view === 'forgot') {
-                const { error } = await supabase.auth.resetPasswordForEmail(email, {
-                    redirectTo: window.location.origin,
-                });
-                if (error) throw error;
-                setMessage('重置链接已发送！请查看您的邮箱。');
-            }
-        } catch (err) {
-            setError(err.message);
-        }
-        setLoading(false);
-    };
-
-    return (
-        <div className="max-w-md mx-auto p-4 py-20">
-            <div className="flex items-center justify-center gap-3 mb-8">
-                <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-600 rounded-lg flex items-center justify-center text-white shadow-lg shadow-amber-500/30">
-                    <Icons.Book />
-                </div>
-                <div>
-                    <div className="text-xl font-bold text-slate-800 dark:text-slate-100">词汇本</div>
-                    <div className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                        <Icons.Cloud /> 云端同步版
-                    </div>
-                </div>
-            </div>
-
-            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6 shadow-sm mb-6 max-w-sm mx-auto">
-                <h3 className="text-base font-semibold mb-4 text-center text-slate-800 dark:text-slate-100">
-                    {view === 'login' && '登录'}
-                    {view === 'signup' && '注册'}
-                    {view === 'forgot' && '重置密码'}
-                </h3>
-
-                <form onSubmit={handleSubmit}>
-                    <input
-                        className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-slate-400 dark:focus:border-slate-500 mb-2 text-slate-800 dark:text-slate-100"
-                        type="email"
-                        placeholder="邮箱"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        required
-                        autoComplete="username"
-                    />
-                    {view !== 'forgot' && (
-                        <input
-                            className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-slate-400 dark:focus:border-slate-500 mb-2 text-slate-800 dark:text-slate-100"
-                            type="password"
-                            placeholder="密码"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            required
-                            minLength={6}
-                            autoComplete="current-password"
-                        />
-                    )}
-
-                    {error && (
-                        <div style={{ fontSize: '0.75rem', color: '#ef4444', marginBottom: '0.5rem' }}>
-                            {error}
-                        </div>
-                    )}
-
-                    {message && (
-                        <div style={{ fontSize: '0.75rem', color: '#059669', marginBottom: '0.5rem' }}>
-                            {message}
-                        </div>
-                    )}
-
-                    <button className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 dark:bg-slate-100 dark:hover:bg-slate-200 dark:text-slate-900 text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed mt-2" disabled={loading}>
-                        {loading ? '处理中...' : (
-                            view === 'login' ? '登录' : (view === 'signup' ? '注册' : '发送重置链接')
-                        )}
-                    </button>
-                </form>
-
-                <div className="text-center mt-4 text-sm flex flex-col gap-2">
-                    {view === 'login' && (
-                        <>
-                            <button
-                                onClick={() => { setView('forgot'); setError(''); setMessage(''); }}
-                                className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-                            >
-                                忘记密码？
-                            </button>
-                            <div>
-                                <span className="text-slate-500 dark:text-slate-400">没有账户？</span>
-                                <button
-                                    onClick={() => { setView('signup'); setError(''); setMessage(''); }}
-                                    className="bg-transparent border-none text-blue-600 hover:text-blue-700 font-medium cursor-pointer ml-1"
-                                >
-                                    注册
-                                </button>
-                            </div>
-                        </>
-                    )}
-                    {view === 'signup' && (
-                        <div>
-                            <span className="text-slate-500 dark:text-slate-400">已有账户？</span>
-                            <button
-                                onClick={() => { setView('login'); setError(''); setMessage(''); }}
-                                className="bg-transparent border-none text-blue-600 hover:text-blue-700 font-medium cursor-pointer ml-1"
-                            >
-                                登录
-                            </button>
-                        </div>
-                    )}
-                    {view === 'forgot' && (
-                        <button
-                            onClick={() => { setView('login'); setError(''); setMessage(''); }}
-                            className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors"
-                        >
-                            返回登录
-                        </button>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-}
+// Components
+import { Icons } from './components/Icons';
+import VirtualWordList from './components/VirtualWordList';
+import AuthForm from './components/AuthForm';
+import SettingsPanel from './components/SettingsPanel';
+import UndoToast from './components/UndoToast';
+
+// Services
+import { getAIContent, detectAndGetContent, regenerateExample, generateCombinedSentence } from './services/openai';
+import { speakWord } from './services/tts';
+
+// Hooks
+import { useTheme } from './hooks/useTheme';
 
 function App() {
     const [user, setUser] = useState(null);
@@ -716,52 +25,33 @@ function App() {
     const [loading, setLoading] = useState(true);
     const [aiLoading, setAiLoading] = useState(false);
     const [speakingId, setSpeakingId] = useState(null);
-    const [cachedKeys, setCachedKeys] = useState(new Set()); // Track which words have cached audio
+    const [cachedKeys, setCachedKeys] = useState(new Set());
     const [regeneratingId, setRegeneratingId] = useState(null);
     const [apiKey, setApiKey] = useState(() => {
-        // 优先使用 localStorage 中的值
         const savedKey = localStorage.getItem('vocab-api-key');
         const wasDeleted = localStorage.getItem('vocab-api-key-deleted');
         if (savedKey) return savedKey;
-        // 如果用户明确删除了，不使用环境变量
         if (wasDeleted) return '';
-        // 否则使用环境变量
         return import.meta.env.VITE_OPENAI_API_KEY || '';
     });
     const [showSettings, setShowSettings] = useState(false);
     const [syncing, setSyncing] = useState(false);
     const [todayFilter, setTodayFilter] = useState(false);
-    const [theme, setTheme] = useState(() => {
-        // Default to system preference on load (refresh)
-        if (typeof window !== 'undefined') {
-            return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-        }
-        return 'light';
-    });
+    const { theme, toggleTheme } = useTheme();
     const [showPasswordUpdate, setShowPasswordUpdate] = useState(false);
     const [newPassword, setNewPassword] = useState('');
-    // Sentence generation state
     const [showSentence, setShowSentence] = useState(false);
-    const [sentenceData, setSentenceData] = useState(null); // { words: [...], sentence: '', sentenceCn: '' }
+    const [sentenceData, setSentenceData] = useState(null);
     const [sentenceLoading, setSentenceLoading] = useState(false);
-    // Saved sentences state
     const [savedSentences, setSavedSentences] = useState([]);
     const [savingId, setSavingId] = useState(null);
+
+    // Undo state
+    const [deletedItem, setDeletedItem] = useState(null);
 
     const inputRef = useRef(null);
     const aiTimeoutRef = useRef(null);
     const ignoreFetch = useRef(false);
-
-    // Theme Effect
-    useEffect(() => {
-        const root = window.document.documentElement;
-        if (theme === 'dark') {
-            root.classList.add('dark');
-        } else {
-            root.classList.remove('dark');
-        }
-        // No localStorage saving
-    }, [theme]);
 
     // Auth state listener
     useEffect(() => {
@@ -798,7 +88,6 @@ function App() {
         if (error) {
             console.error('Load error:', error);
         } else {
-            // Convert DB format to app format
             const formatted = data.map(w => ({
                 id: w.id,
                 word: w.word,
@@ -811,22 +100,15 @@ function App() {
                 timestamp: new Date(w.created_at).getTime()
             }));
             setWords(formatted);
-
-            // Migrate localStorage data if exists
             await migrateLocalStorage(userId);
         }
 
-        // Load saved API key
         const savedKey = localStorage.getItem('vocab-api-key');
         if (savedKey) setApiKey(savedKey);
-
-        // Load saved sentences
         await loadSavedSentences(userId);
-
         setLoading(false);
     };
 
-    // Load saved sentences from Supabase
     const loadSavedSentences = async (userId) => {
         const { data, error } = await supabase
             .from('saved_sentences')
@@ -839,8 +121,7 @@ function App() {
         }
     };
 
-    // Save a sentence to collection
-    const saveSentence = async (sentenceObj) => {
+    const saveSentence = useCallback(async (sentenceObj) => {
         if (!user) return;
         setSavingId(sentenceObj.sentence);
 
@@ -858,28 +139,24 @@ function App() {
             setSavedSentences(prev => [data[0], ...prev]);
         }
         setSavingId(null);
-    };
+    }, [user]);
 
-    // Remove a sentence from collection
-    const unsaveSentence = async (id) => {
+    const unsaveSentence = useCallback(async (id) => {
         const { error } = await supabase.from('saved_sentences').delete().eq('id', id);
         if (!error) {
             setSavedSentences(prev => prev.filter(s => s.id !== id));
         }
-    };
+    }, []);
 
-    // Check if a sentence is already saved
-    const isSentenceSaved = (sentence) => {
+    const isSentenceSaved = useCallback((sentence) => {
         return savedSentences.some(s => s.sentence === sentence);
-    };
+    }, [savedSentences]);
 
-    // Get saved sentence ID by sentence text
-    const getSavedSentenceId = (sentence) => {
+    const getSavedSentenceId = useCallback((sentence) => {
         const found = savedSentences.find(s => s.sentence === sentence);
         return found ? found.id : null;
-    };
+    }, [savedSentences]);
 
-    // Migrate localStorage data to Supabase
     const migrateLocalStorage = async (userId) => {
         const localData = localStorage.getItem('vocab-words-v4');
         if (!localData) return;
@@ -905,13 +182,9 @@ function App() {
                 if (error) console.error('Migration error:', error);
             }
 
-            // Reload words after migration
             await loadWords(userId);
-
-            // Clear localStorage after successful migration
             localStorage.removeItem('vocab-words-v4');
             console.log(`Migrated ${localWords.length} words to cloud`);
-
             setSyncing(false);
         } catch (e) {
             console.error('Migration failed:', e);
@@ -963,13 +236,12 @@ function App() {
         return () => { if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current); };
     }, [newWord.word, newWord.language, apiKey]);
 
-    const handleRegenerate = async (wordId) => {
+    const handleRegenerate = useCallback(async (wordId) => {
         const word = words.find(w => w.id === wordId);
         if (!word || !apiKey) return;
         setRegeneratingId(wordId);
         const newEx = await regenerateExample(word.word, word.meaning, word.language, apiKey);
         if (newEx && user) {
-            // Update in Supabase
             const { error } = await supabase
                 .from('words')
                 .update({ example: newEx.example, example_cn: newEx.exampleCn })
@@ -980,24 +252,20 @@ function App() {
             }
         }
         setRegeneratingId(null);
-    };
+    }, [words, apiKey, user]);
 
     const handleStartAdd = async () => {
         setIsAdding(true);
         if (searchQuery.trim()) {
             const text = searchQuery.trim();
-
-            // Set word but ignore the standard AI fetch effect
             ignoreFetch.current = true;
             setNewWord(prev => ({ ...prev, word: text }));
 
             if (apiKey) {
                 setAiLoading(true);
-                // Smart detect
                 const content = await detectAndGetContent(text, apiKey);
 
                 if (content) {
-                    // Update all fields, ignore effect again
                     ignoreFetch.current = true;
                     setNewWord(prev => ({
                         ...prev,
@@ -1047,59 +315,109 @@ function App() {
 
         setNewWord({ word: '', meaning: '', language: newWord.language, example: '', exampleCn: '', category: '' });
         setIsAdding(false);
-        setSearchQuery(''); // Clear search so all words appear
+        setSearchQuery('');
         setSyncing(false);
     };
 
-    const deleteWord = async (id) => {
+    const deleteWord = useCallback(async (id) => {
         if (!user) return;
 
-        const { error } = await supabase.from('words').delete().eq('id', id);
-
-        if (!error) {
-            setWords(prev => prev.filter(w => w.id !== id));
+        // Store deleted word for undo
+        const wordToDelete = words.find(w => w.id === id);
+        if (wordToDelete) {
+            setDeletedItem(wordToDelete);
         }
-    };
+
+        // Optimistically remove from UI
+        setWords(prev => prev.filter(w => w.id !== id));
+
+        // Delete from database
+        const { error } = await supabase.from('words').delete().eq('id', id);
+        if (error) {
+            // Restore on error
+            if (wordToDelete) {
+                setWords(prev => [...prev, wordToDelete].sort((a, b) => b.timestamp - a.timestamp));
+            }
+            console.error('Delete error:', error);
+        }
+    }, [user, words]);
+
+    const handleUndo = useCallback(async () => {
+        if (!deletedItem || !user) return;
+
+        // Re-insert the word
+        const { data, error } = await supabase.from('words').insert({
+            user_id: user.id,
+            word: deletedItem.word,
+            meaning: deletedItem.meaning,
+            language: deletedItem.language,
+            example: deletedItem.example,
+            example_cn: deletedItem.exampleCn,
+            category: deletedItem.category,
+            date: deletedItem.date
+        }).select().single();
+
+        if (!error && data) {
+            setWords(prev => [{
+                id: data.id,
+                word: data.word,
+                meaning: data.meaning,
+                language: data.language,
+                example: data.example || '',
+                exampleCn: data.example_cn || '',
+                category: data.category || '',
+                date: data.date,
+                timestamp: new Date(data.created_at).getTime()
+            }, ...prev]);
+        }
+
+        setDeletedItem(null);
+    }, [deletedItem, user]);
+
+    const handleUndoDismiss = useCallback(() => {
+        setDeletedItem(null);
+    }, []);
 
     const handleLogout = async () => {
         await supabase.auth.signOut();
     };
 
-    const filteredWords = words.filter(w => {
+    const filteredWords = useMemo(() => words.filter(w => {
         const matchesTab = activeTab === 'all' || activeTab === 'saved' || w.language === activeTab;
         const matchesSearch = !searchQuery || w.word.toLowerCase().includes(searchQuery.toLowerCase()) || w.meaning.includes(searchQuery);
         const matchesToday = !todayFilter || w.date === new Date().toLocaleDateString('sv-SE');
         return matchesTab && matchesSearch && matchesToday;
-    });
+    }), [words, activeTab, searchQuery, todayFilter]);
 
-    const groupedByDate = filteredWords.reduce((acc, word) => {
+    const groupedByDate = useMemo(() => filteredWords.reduce((acc, word) => {
         if (!acc[word.date]) acc[word.date] = [];
         acc[word.date].push(word);
         return acc;
-    }, {});
+    }, {}), [filteredWords]);
 
-    const formatDate = (d) => {
+    const formatDate = useCallback((d) => {
         const today = new Date().toLocaleDateString('sv-SE');
         const yesterday = new Date(Date.now() - 86400000).toLocaleDateString('sv-SE');
         if (d === today) return '今天';
         if (d === yesterday) return '昨天';
         return new Date(d).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
-    };
+    }, []);
 
-    const getCategoryClass = (cat) => {
+    const getCategoryClass = useCallback((cat) => {
         const map = {
             daily: 'bg-green-50 text-green-600 dark:bg-green-500/10 dark:text-green-400',
             professional: 'bg-purple-50 text-purple-600 dark:bg-purple-500/10 dark:text-purple-400',
             formal: 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400'
         };
         return map[cat] || 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400';
-    };
-    const getCategoryLabel = (cat) => {
+    }, []);
+
+    const getCategoryLabel = useCallback((cat) => {
         const map = { daily: '日常', professional: '专业', formal: '正式' };
         return map[cat] || '';
-    };
+    }, []);
 
-    const exportWords = () => {
+    const exportWords = useCallback(() => {
         const csv = ['Word,Meaning,Language,Example,Example_CN,Category,Date']
             .concat(words.map(w => `"${w.word}","${w.meaning}","${w.language}","${w.example}","${w.exampleCn || ''}","${w.category || ''}","${w.date}"`))
             .join('\n');
@@ -1108,17 +426,16 @@ function App() {
         a.href = URL.createObjectURL(blob);
         a.download = `vocab-${new Date().toLocaleDateString('sv-SE')}.csv`;
         a.click();
-    };
+    }, [words]);
 
-    const stats = {
+    const stats = useMemo(() => ({
         total: words.length,
         en: words.filter(w => w.language === 'en').length,
         de: words.filter(w => w.language === 'de').length,
         today: words.filter(w => w.date === new Date().toLocaleDateString('sv-SE')).length,
         saved: savedSentences.length
-    };
+    }), [words, savedSentences]);
 
-    // Handle sentence generation
     const handleGenerateSentence = async () => {
         if (!apiKey || activeTab === 'all') return;
 
@@ -1128,8 +445,7 @@ function App() {
         setSentenceLoading(true);
         setShowSentence(true);
 
-        // Randomly select 2-4 words
-        const count = Math.min(langWords.length, Math.floor(Math.random() * 3) + 2); // 2-4 words
+        const count = Math.min(langWords.length, Math.floor(Math.random() * 3) + 2);
         const shuffled = [...langWords].sort(() => Math.random() - 0.5);
         const selectedWords = shuffled.slice(0, count);
 
@@ -1172,7 +488,7 @@ function App() {
                     </div>
                 </div>
                 <div className="flex gap-2">
-                    <button className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 rounded-lg active:scale-90 transition-all" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+                    <button className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 rounded-lg active:scale-90 transition-all" onClick={toggleTheme}>
                         {theme === 'dark' ? <Icons.Sun /> : <Icons.Moon />}
                     </button>
                     <button className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 rounded-lg active:scale-90 transition-all" onClick={() => setShowSettings(!showSettings)}><Icons.Settings /></button>
@@ -1231,7 +547,7 @@ function App() {
                 </div>
             )}
 
-            {/* API Key Warning - Show when no API key is set */}
+            {/* API Key Warning */}
             {!apiKey && (
                 <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
                     <div className="flex items-center gap-2 mb-2">
@@ -1263,36 +579,9 @@ function App() {
 
             {/* Settings Panel */}
             {showSettings && apiKey && (
-                <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4 mb-6">
-                    <h3 className="text-sm font-semibold mb-2 text-slate-800 dark:text-slate-100">Settings</h3>
-                    <label className="block text-xs text-slate-500 mb-1">OpenAI API Key</label>
-                    <div className="flex gap-2">
-                        <input
-                            className="flex-1 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-slate-400 dark:focus:border-slate-500 text-slate-800 dark:text-slate-100"
-                            type="password"
-                            placeholder="sk-proj-..."
-                            value={apiKey}
-                            onChange={(e) => setApiKey(e.target.value)}
-                            autoComplete="off"
-                        />
-                        <button
-                            className="flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"
-                            onClick={() => {
-                                setApiKey('');
-                                localStorage.removeItem('vocab-api-key');
-                                localStorage.setItem('vocab-api-key-deleted', 'true');
-                            }}
-                            title="删除 API Key"
-                        >
-                            <Icons.Trash /> 删除
-                        </button>
-                    </div>
-                    <div className="text-xs text-slate-400 mt-2">Key is stored locally. 账户: {user?.email}</div>
-                </div>
+                <SettingsPanel apiKey={apiKey} setApiKey={setApiKey} userEmail={user?.email} />
             )}
 
-
-            {/* Stats */}
             {/* Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
                 <button
@@ -1326,7 +615,6 @@ function App() {
             </div>
 
             {/* Search */}
-            {/* Search */}
             <div className="flex gap-3 mb-6">
                 <div className="flex-1 relative">
                     <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></div>
@@ -1345,7 +633,6 @@ function App() {
                 </button>
             </div>
 
-            {/* Tabs */}
             {/* Tabs */}
             <div className="flex gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl mb-6">
                 {[{ id: 'all', label: '全部' }, { id: 'en', label: '🇬🇧 英语' }, { id: 'de', label: '🇩🇪 德语' }, { id: 'saved', label: '⭐ 收藏' }].map(t => (
@@ -1394,7 +681,6 @@ function App() {
                                 </div>
                             ) : sentenceData ? (
                                 <>
-                                    {/* Scene label */}
                                     {sentenceData.scene && (
                                         <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 mb-2">
                                             <span>📍</span>
@@ -1402,7 +688,6 @@ function App() {
                                         </div>
                                     )}
 
-                                    {/* Selected words */}
                                     <div className="flex flex-wrap gap-2 mb-3">
                                         {sentenceData.words.map((w, i) => (
                                             <span
@@ -1417,13 +702,11 @@ function App() {
                                         ))}
                                     </div>
 
-                                    {/* Generated sentence */}
                                     <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 mb-3">
                                         <div className="text-base text-slate-800 dark:text-slate-200 mb-1 leading-relaxed">{sentenceData.sentence}</div>
                                         <div className="text-sm text-slate-500 dark:text-slate-400">{sentenceData.sentenceCn}</div>
                                     </div>
 
-                                    {/* Actions */}
                                     <div className="flex gap-2">
                                         <button
                                             className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 active:scale-95 transition-all text-sm font-medium"
@@ -1519,7 +802,6 @@ function App() {
 
             {/* Word List */}
             {activeTab === 'saved' ? (
-                /* Saved Sentences List */
                 <div>
                     {savedSentences.length === 0 ? (
                         <div className="text-center py-16">
@@ -1604,6 +886,13 @@ function App() {
             <div className="mt-8 text-center text-xs text-slate-400 flex items-center justify-center gap-1 pb-8">
                 <Icons.Cloud /> 数据已同步到云端 · 点击单词听发音
             </div>
+
+            {/* Undo Toast */}
+            <UndoToast
+                deletedItem={deletedItem}
+                onUndo={handleUndo}
+                onDismiss={handleUndoDismiss}
+            />
         </div>
     );
 }

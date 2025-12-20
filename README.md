@@ -108,6 +108,13 @@ This project requires a Supabase backend. Please refer to [SUPABASE_SETUP.md](./
 
 ### 📝 Changelog
 
+#### v1.2.0 (2025-12-20)
+- **🏗️ Code Refactoring**: Modularized codebase into components, services, and hooks.
+- **⚡ Performance**: Added `React.memo`, `useCallback`, and `useMemo` optimizations.
+- **↩️ Undo Delete**: Added 5-second undo toast for accidental deletions.
+- **🛡️ Error Boundary**: Added graceful error handling with recovery option.
+- **🌓 Theme Persistence**: User theme choice now persists across sessions.
+
 #### v1.1.0 (2025-12-20)
 - **🌓 Dark Mode**: Added manual theme toggle with persistent storage.
 - **⚡ Virtual Scrolling**: Implemented window-level virtualization for improved performance.
@@ -221,6 +228,13 @@ vocab-tracker/
 本项目需要 Supabase 后端支持。详细设置请参阅 [SUPABASE_SETUP.md](./SUPABASE_SETUP.md)。
 
 ### 📝 更新日志 (Changelog)
+
+#### v1.2.0 (2025-12-20)
+- **🏗️ 代码重构**: 模块化拆分代码为组件、服务和 Hooks，提升可维护性。
+- **⚡ 性能优化**: 添加 `React.memo`、`useCallback`、`useMemo` 优化。
+- **↩️ 撤销删除**: 误删单词后 5 秒内可撤销恢复。
+- **🛡️ 错误边界**: 添加优雅的错误处理和恢复机制。
+- **🌓 主题持久化**: 用户的主题选择现在会跨会话保存。
 
 #### v1.1.0 (2025-12-20)
 - **🌓 深色模式**: 添加手动主题切换，支持持久化存储。
