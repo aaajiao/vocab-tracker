@@ -26,26 +26,50 @@ function SwipeableCard({ children, onDelete, className }) {
     const [offset, setOffset] = useState(0);
     const [swiping, setSwiping] = useState(false);
     const [hovering, setHovering] = useState(false);
+    const [swipeDirection, setSwipeDirection] = useState(null); // 'horizontal' | 'vertical' | null
     const startX = useRef(0);
+    const startY = useRef(0);
     const currentX = useRef(0);
+    const currentY = useRef(0);
 
     const handleTouchStart = (e) => {
         startX.current = e.touches[0].clientX;
+        startY.current = e.touches[0].clientY;
         currentX.current = startX.current;
+        currentY.current = startY.current;
         setSwiping(true);
+        setSwipeDirection(null); // Reset direction lock
     };
 
     const handleTouchMove = (e) => {
         if (!swiping) return;
+
         currentX.current = e.touches[0].clientX;
-        const diff = currentX.current - startX.current;
-        if (diff < 0) {
-            setOffset(Math.max(diff, -100));
+        currentY.current = e.touches[0].clientY;
+
+        const diffX = currentX.current - startX.current;
+        const diffY = currentY.current - startY.current;
+
+        // Dead zone: ignore movements less than 10px
+        const totalMove = Math.sqrt(diffX * diffX + diffY * diffY);
+        if (totalMove < 10) return;
+
+        // Direction locking: determine direction on first significant move
+        if (swipeDirection === null) {
+            const angle = Math.atan2(Math.abs(diffY), Math.abs(diffX)) * 180 / Math.PI;
+            setSwipeDirection(angle < 30 ? 'horizontal' : 'vertical');
+        }
+
+        // Only update offset for horizontal swipes
+        if (swipeDirection === 'horizontal' && diffX < 0) {
+            setOffset(Math.max(diffX, -100));
         }
     };
 
     const handleTouchEnd = () => {
         setSwiping(false);
+        setSwipeDirection(null); // Reset direction lock
+
         if (offset < -60) {
             setOffset(-100);
             setTimeout(() => onDelete(), 200);
