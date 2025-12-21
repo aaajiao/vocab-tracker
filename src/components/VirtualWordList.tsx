@@ -1,4 +1,4 @@
-import { useRef, memo } from 'react';
+import { useRef, memo, useState } from 'react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import SwipeableCard from './SwipeableCard';
 import { Icons } from './Icons';
@@ -27,6 +27,19 @@ function VirtualWordList({
     saveSentence, unsaveSentence, isSentenceSaved, getSavedSentenceId, savingId
 }: VirtualWordListProps) {
     const listRef = useRef<HTMLDivElement>(null);
+    const [expandedEtymology, setExpandedEtymology] = useState<Set<string>>(new Set());
+
+    const toggleEtymology = (wordId: string) => {
+        setExpandedEtymology(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(wordId)) {
+                newSet.delete(wordId);
+            } else {
+                newSet.add(wordId);
+            }
+            return newSet;
+        });
+    };
 
     // Flatten grouped data into a single list with date headers
     const flatList: FlatListItem[] = [];
@@ -121,18 +134,26 @@ function VirtualWordList({
                                 </div>
                                 <div className="text-sm text-slate-600 dark:text-slate-300 mb-2 font-medium">{word.meaning}</div>
 
-                                {/* Etymology Section */}
+                                {/* Etymology Section - Collapsible */}
                                 {word.etymology && (
                                     <div className="mb-2">
-                                        <div className="text-xs text-slate-500 dark:text-slate-400 bg-amber-50/50 dark:bg-amber-900/10 border border-amber-200/50 dark:border-amber-800/30 rounded-lg px-3 py-2">
-                                            <div className="flex items-start gap-1.5">
-                                                <span className="text-amber-600 dark:text-amber-500 mt-0.5">📖</span>
-                                                <div className="flex-1">
-                                                    <span className="font-medium text-amber-700 dark:text-amber-400">词源：</span>
-                                                    <span className="text-slate-600 dark:text-slate-300">{word.etymology}</span>
-                                                </div>
+                                        <button
+                                            onClick={() => toggleEtymology(word.id)}
+                                            className="w-full text-left text-xs text-slate-500 dark:text-slate-400 bg-amber-50/30 dark:bg-amber-900/5 hover:bg-amber-50/50 dark:hover:bg-amber-900/10 border border-amber-200/30 dark:border-amber-800/20 rounded-lg px-3 py-2 transition-colors"
+                                        >
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="text-amber-600 dark:text-amber-500">📖</span>
+                                                <span className="font-medium text-amber-700 dark:text-amber-400">词源</span>
+                                                <span className="ml-auto text-amber-600 dark:text-amber-500">
+                                                    {expandedEtymology.has(word.id) ? '▲' : '▼'}
+                                                </span>
                                             </div>
-                                        </div>
+                                        </button>
+                                        {expandedEtymology.has(word.id) && (
+                                            <div className="mt-1 text-xs text-slate-600 dark:text-slate-300 bg-amber-50/50 dark:bg-amber-900/10 border border-amber-200/50 dark:border-amber-800/30 rounded-lg px-3 py-2">
+                                                {word.etymology}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 

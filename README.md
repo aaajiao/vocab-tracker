@@ -20,6 +20,7 @@ A multi-language vocabulary learning application powered by AI, supporting Engli
 - **⚡ Performance**: Implemented window-level virtual scrolling for smooth handling of large vocabulary lists.
 - **🤖 AI Translation**: Automatically generates accurate Chinese translations using OpenAI GPT-4o-mini.
 - **📝 Contextual Examples**: Generates matching sentences based on word nature (Daily/Professional/Formal).
+- **📖 Etymology Support**: Analyzes word origins (Latin, Greek, etc.) to help deepen understanding. Collapsible UI keeps the interface clean.
 - **✨ Combined Sentence Creation**: Randomly selects multiple saved words and AI generates a sentence containing them to reinforce memory.
 - **📍 Scene Tags**: Automatically tags sentences with applicable scenes (e.g., Daily Conversation, Workplace).
 - **⭐ Saved Sentences**: Save your favorite examples and combined sentences, synced to the cloud.
@@ -132,7 +133,24 @@ vocab-tracker/
 
 This project requires a Supabase backend. Please refer to [SUPABASE_SETUP.md](./SUPABASE_SETUP.md) for detailed setup instructions.
 
-### 📝 Changelog
+### � Release Checklist
+
+> **Reminder**: Don't forget to update version numbers!
+
+Run this command to update both `package.json` and `package-lock.json`:
+
+```bash
+npm version <new-version>  # e.g., npm version 1.5.1
+```
+
+### �📝 Changelog
+
+#### v1.5.0 (2025-12-21)
+- ✨ **New Feature (AI)**: Added **Etymology Support**.
+  - Analyzes word origins (e.g., Latin, Greek roots).
+  - Collapsible "📖 Etymology" section in word cards.
+  - Supports both English and German words.
+- 💄 **UI Improvements**: Improved word card layout with collapsible sections.
 
 #### v1.4.4 (2025-12-21)
 - **🔊 Persistent Audio Cache**: TTS audio cached in IndexedDB for offline playback across sessions.
@@ -193,6 +211,7 @@ This project requires a Supabase backend. Please refer to [SUPABASE_SETUP.md](./
 - **⚡ 性能优化**：实现窗口级虚拟滚动，流畅处理海量词汇列表
 - **🤖 AI 智能翻译**：使用 OpenAI GPT-4o-mini 自动生成准确的中文翻译
 - **📝 情境例句**：根据词汇性质（日常/专业/正式）生成匹配的例句
+- **📖 词源解析**：分析单词起源（拉丁语、希腊语等）帮助加深理解，可折叠 UI 保持界面整洁
 - **✨ 组合造句**：随机选取多个已记录的单词，AI 生成包含这些单词的句子，加深记忆
 - **📍 场景标签**：根据单词类别自动标注句子适用场景（日常对话/职场交流等）
 - **⭐ 句子收藏**：收藏喜欢的例句和组合造句，云端同步
@@ -305,7 +324,24 @@ vocab-tracker/
 
 本项目需要 Supabase 后端支持。详细设置请参阅 [SUPABASE_SETUP.md](./SUPABASE_SETUP.md)。
 
+### 📦 发布/更新检查清单 (Release Checklist)
+
+> **🔔 提醒**：每次更新功能后，请记得更新版本号！
+
+运行以下命令可自动更新 `package.json` 和 `package-lock.json`：
+
+```bash
+npm version <新版本号>  # 例如: npm version 1.5.1
+```
+
 ### 📝 更新日志 (Changelog)
+
+#### v1.5.0 (2025-12-21)
+- ✨ **新功能 (AI)**：新增 **Etymology (词源解析)** 支持
+  - 自动分析单词起源（如拉丁语、希腊语词根）
+  - 单词卡片增加可折叠的 "📖 词源" 部分
+  - 同时也支持德语单词的词源解析
+- 💄 **UI 优化**：调整卡片布局，支持内容折叠
 
 #### v1.4.4 (2025-12-21)
 - **🔊 持久化音频缓存**: TTS 音频缓存到 IndexedDB，支持跨会话离线播放。
