@@ -108,6 +108,10 @@ This project requires a Supabase backend. Please refer to [SUPABASE_SETUP.md](./
 
 ### 📝 Changelog
 
+#### v1.4.4 (2025-12-21)
+- **🔊 Persistent Audio Cache**: TTS audio cached in IndexedDB for offline playback across sessions.
+- **📊 Cache Management**: Settings panel shows cache stats (count + size) with clear button.
+
 #### v1.4.3 (2025-12-21)
 - **📦 Constants Extraction**: Centralized magic values (timing, categories, storage keys) into `constants.ts`.
 - **💀 Skeleton Loading**: Professional loading screen with animated placeholders instead of "Loading..." text.
@@ -249,6 +253,10 @@ vocab-tracker/
 本项目需要 Supabase 后端支持。详细设置请参阅 [SUPABASE_SETUP.md](./SUPABASE_SETUP.md)。
 
 ### 📝 更新日志 (Changelog)
+
+#### v1.4.4 (2025-12-21)
+- **🔊 持久化音频缓存**: TTS 音频缓存到 IndexedDB，支持跨会话离线播放。
+- **📊 缓存管理**: 设置面板显示缓存统计（数量 + 大小）和清除按钮。
 
 #### v1.4.3 (2025-12-21)
 - **📦 常量提取**: 将魔法值（时间、分类、存储键）集中到 `constants.ts`。

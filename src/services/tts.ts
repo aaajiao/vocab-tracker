@@ -1,9 +1,11 @@
-// TTS (Text-to-Speech) service
+// TTS (Text-to-Speech) service with IndexedDB caching
 
-// Audio Cache to save bandwidth and make repeated plays instant
-export const audioCache = new Map<string, string>();
+import { getCachedAudio, setCachedAudio, generateCacheKey } from './audioCache';
 
-// OpenAI Text-to-Speech
+// Memory cache for current session (Blob URLs)
+const sessionCache = new Map<string, string>();
+
+// OpenAI Text-to-Speech with persistent IndexedDB caching
 export async function speakWord(
     text: string,
     language: string,
@@ -15,7 +17,7 @@ export async function speakWord(
     setSpeakingId(wordId);
 
     // Cache key
-    const cacheKey = `${language}:${text}`;
+    const cacheKey = generateCacheKey(language, text);
 
     // Fallback to browser speech synthesis
     const useBrowserTTS = () => {
@@ -28,34 +30,63 @@ export async function speakWord(
         }
     };
 
-    // Check cache first
-    if (audioCache.has(cacheKey)) {
+    // Play audio from URL
+    const playAudio = async (url: string): Promise<boolean> => {
         try {
-            const audio = new Audio(audioCache.get(cacheKey));
-            await audio.play();
+            const audio = new Audio(url);
+            await new Promise<void>((resolve, reject) => {
+                audio.onended = () => resolve();
+                audio.onerror = () => reject(new Error('Playback error'));
+                audio.play().catch(reject);
+            });
+            return true;
+        } catch {
+            return false;
+        }
+    };
+
+    // 1. Check session cache (fastest - already have blob URL)
+    if (sessionCache.has(cacheKey)) {
+        const played = await playAudio(sessionCache.get(cacheKey)!);
+        if (played) {
             setSpeakingId(null);
             return;
-        } catch (e) {
-            console.error('Cache playback failed:', e);
-            audioCache.delete(cacheKey); // Clear bad cache
         }
+        sessionCache.delete(cacheKey); // Clear bad cache
     }
 
-    // If no API key, use browser TTS
+    // 2. Check IndexedDB cache (persistent)
+    try {
+        const cachedBlob = await getCachedAudio(cacheKey);
+        if (cachedBlob) {
+            const url = URL.createObjectURL(cachedBlob);
+            sessionCache.set(cacheKey, url); // Add to session cache
+            const played = await playAudio(url);
+            if (played) {
+                if (onCacheUpdate) onCacheUpdate(cacheKey);
+                setSpeakingId(null);
+                return;
+            }
+        }
+    } catch (e) {
+        console.warn('IndexedDB cache check failed:', e);
+    }
+
+    // 3. If no API key, use browser TTS
     if (!apiKey) {
         useBrowserTTS();
         setSpeakingId(null);
         return;
     }
 
-    // Try with retry logic (Exponential Backoff)
+    // 4. Fetch from OpenAI API with retry logic
     let retries = 0;
     const maxRetries = 3;
     let response: Response | undefined;
 
     while (retries <= maxRetries) {
         try {
-            // Optimization: Add period to short words to prevent cutoff
+            // Add period to short inputs to prevent cutoff
             const apiInput = (text.length < 50 && !text.endsWith('.') && !text.endsWith('!') && !text.endsWith('?'))
                 ? `${text}.`
                 : text;
@@ -72,16 +103,14 @@ export async function speakWord(
                     input: apiInput,
                     speed: 0.9
                 }),
-                signal: AbortSignal.timeout(10000) // 10s timeout
+                signal: AbortSignal.timeout(10000)
             });
 
             if (response.ok) break;
 
-            // If we're here, response was not OK
             const errorData = await response.json().catch(() => ({}));
             console.warn(`TTS attempt ${retries + 1} failed (${response.status}):`, errorData);
 
-            // Wait with exponential backoff: 500ms, 1000ms, 2000ms
             const delay = 500 * Math.pow(2, retries);
             await new Promise(r => setTimeout(r, delay));
         } catch (e) {
@@ -98,6 +127,7 @@ export async function speakWord(
         }
     }
 
+    // 5. Process response and cache
     try {
         if (!response) {
             useBrowserTTS();
@@ -108,26 +138,24 @@ export async function speakWord(
         const audioBlob = await response.blob();
         const audioUrl = URL.createObjectURL(audioBlob);
 
-        // Save to cache for next time
-        audioCache.set(cacheKey, audioUrl);
+        // Save to IndexedDB (persistent) and session cache
+        await setCachedAudio(cacheKey, audioBlob).catch(e => {
+            console.warn('Failed to save to IndexedDB:', e);
+        });
+        sessionCache.set(cacheKey, audioUrl);
         if (onCacheUpdate) onCacheUpdate(cacheKey);
 
-        const audio = new Audio(audioUrl);
-        await new Promise<void>((resolve) => {
-            audio.onended = () => resolve();
-            audio.onerror = () => {
-                useBrowserTTS();
-                resolve();
-            };
-            audio.play().catch((err) => {
-                console.error('Playback error:', err);
-                useBrowserTTS();
-                resolve();
-            });
-        });
+        // Play
+        const played = await playAudio(audioUrl);
+        if (!played) {
+            useBrowserTTS();
+        }
     } catch (e) {
         console.error('Final TTS processing error:', e);
         useBrowserTTS();
     }
     setSpeakingId(null);
 }
+
+// Re-export cache functions for use elsewhere
+export { getCacheStats, clearAudioCache, isAudioCached } from './audioCache';
