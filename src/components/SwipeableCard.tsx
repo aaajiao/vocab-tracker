@@ -61,7 +61,7 @@ function SwipeableCard({ children, onDelete, className }: SwipeableCardProps) {
 
     return (
         <div
-            className="relative overflow-hidden rounded-xl mb-3"
+            className="relative overflow-hidden rounded-xl w-full"
             onMouseEnter={() => setHovering(true)}
             onMouseLeave={() => setHovering(false)}
         >

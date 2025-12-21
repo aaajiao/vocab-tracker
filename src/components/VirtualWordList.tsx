@@ -39,7 +39,16 @@ function VirtualWordList({
 
     const virtualizer = useWindowVirtualizer({
         count: flatList.length,
-        estimateSize: (index) => flatList[index]?.type === 'header' ? 48 : 180,
+        estimateSize: (index) => {
+            const item = flatList[index];
+            if (!item) return 48;
+            if (item.type === 'header') return 48;
+            // Word card: base height + example height if exists + spacing
+            const baseHeight = 90; // title + meaning
+            const exampleHeight = item.example ? 130 : 0; // example block (increased for multi-line)
+            const spacing = 16; // gap between cards
+            return baseHeight + exampleHeight + spacing;
+        },
         overscan: 5,
         scrollMargin: listRef.current?.offsetTop ?? 0,
     });
@@ -61,15 +70,16 @@ function VirtualWordList({
                         return (
                             <div
                                 key={`header-${item.date}`}
+                                data-index={virtualRow.index}
+                                ref={virtualizer.measureElement}
                                 style={{
                                     position: 'absolute',
                                     top: 0,
                                     left: 0,
                                     width: '100%',
-                                    height: `${virtualRow.size}px`,
                                     transform: `translateY(${virtualRow.start - (virtualizer.options.scrollMargin || 0)}px)`,
                                 }}
-                                className="flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 pt-4"
+                                className="flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 pt-4 pb-2"
                             >
                                 <Icons.Calendar /> {formatDate(item.date!)}
                                 <span className="text-xs opacity-60">({item.count})</span>
@@ -81,13 +91,15 @@ function VirtualWordList({
                     return (
                         <div
                             key={word.id}
+                            data-index={virtualRow.index}
+                            ref={virtualizer.measureElement}
                             style={{
                                 position: 'absolute',
                                 top: 0,
                                 left: 0,
                                 width: '100%',
                                 transform: `translateY(${virtualRow.start - (virtualizer.options.scrollMargin || 0)}px)`,
-                                paddingBottom: '12px',
+                                paddingBottom: '16px',
                             }}
                         >
                             <SwipeableCard
