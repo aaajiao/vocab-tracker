@@ -79,14 +79,40 @@ Visit http://localhost:5173
 ```
 vocab-tracker/
 ├── src/
-│   ├── App.jsx         # Main Application Component
-│   ├── index.css       # Stylesheet
-│   └── main.jsx        # Entry Point
-├── .vscode/            # VS Code Config
-├── index.html          # HTML Template
-├── vite.config.js      # Vite Config
-├── package.json        # Dependencies
-└── .env                # Environment Variables
+│   ├── App.tsx              # Main Application Component
+│   ├── main.tsx             # Entry Point
+│   ├── index.css            # Stylesheet
+│   ├── constants.ts         # App Constants
+│   ├── types.ts             # TypeScript Types
+│   ├── supabaseClient.ts    # Supabase Client
+│   ├── components/          # UI Components
+│   │   ├── AuthForm.tsx
+│   │   ├── ErrorBoundary.tsx
+│   │   ├── Icons.tsx
+│   │   ├── SettingsPanel.tsx
+│   │   ├── Skeleton.tsx
+│   │   ├── SwipeableCard.tsx
+│   │   ├── SwipeableSentenceCard.tsx
+│   │   ├── ToastContainer.tsx
+│   │   ├── UndoToast.tsx
+│   │   └── VirtualWordList.tsx
+│   ├── hooks/               # Custom React Hooks
+│   │   ├── useAuth.ts
+│   │   ├── useDebounce.ts
+│   │   ├── useSentences.ts
+│   │   ├── useTheme.ts
+│   │   ├── useToast.ts
+│   │   ├── useUndo.ts
+│   │   └── useWords.ts
+│   └── services/            # API Services
+│       ├── audioCache.ts
+│       ├── openai.ts
+│       └── tts.ts
+├── .vscode/                 # VS Code Config
+├── index.html               # HTML Template
+├── vite.config.js           # Vite Config
+├── package.json             # Dependencies
+└── .env                     # Environment Variables
 ```
 
 ### 🔧 Tech Stack
@@ -226,14 +252,40 @@ npm run dev
 ```
 vocab-tracker/
 ├── src/
-│   ├── App.jsx         # 主应用组件
-│   ├── index.css       # 样式表
-│   └── main.jsx        # 入口文件
-├── .vscode/            # VS Code配置
-├── index.html          # HTML 模板
-├── vite.config.js      # Vite 配置
-├── package.json        # 项目依赖
-└── .env                # 环境变量
+│   ├── App.tsx              # 主应用组件
+│   ├── main.tsx             # 入口文件
+│   ├── index.css            # 样式表
+│   ├── constants.ts         # 常量定义
+│   ├── types.ts             # TypeScript 类型
+│   ├── supabaseClient.ts    # Supabase 客户端
+│   ├── components/          # UI 组件
+│   │   ├── AuthForm.tsx
+│   │   ├── ErrorBoundary.tsx
+│   │   ├── Icons.tsx
+│   │   ├── SettingsPanel.tsx
+│   │   ├── Skeleton.tsx
+│   │   ├── SwipeableCard.tsx
+│   │   ├── SwipeableSentenceCard.tsx
+│   │   ├── ToastContainer.tsx
+│   │   ├── UndoToast.tsx
+│   │   └── VirtualWordList.tsx
+│   ├── hooks/               # 自定义 Hooks
+│   │   ├── useAuth.ts
+│   │   ├── useDebounce.ts
+│   │   ├── useSentences.ts
+│   │   ├── useTheme.ts
+│   │   ├── useToast.ts
+│   │   ├── useUndo.ts
+│   │   └── useWords.ts
+│   └── services/            # API 服务
+│       ├── audioCache.ts
+│       ├── openai.ts
+│       └── tts.ts
+├── .vscode/                 # VS Code 配置
+├── index.html               # HTML 模板
+├── vite.config.js           # Vite 配置
+├── package.json             # 项目依赖
+└── .env                     # 环境变量
 ```
 
 ### 🔧 技术架构
