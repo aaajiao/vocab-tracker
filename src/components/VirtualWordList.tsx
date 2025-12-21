@@ -87,6 +87,7 @@ function VirtualWordList({
                                 left: 0,
                                 width: '100%',
                                 transform: `translateY(${virtualRow.start - (virtualizer.options.scrollMargin || 0)}px)`,
+                                paddingBottom: '12px',
                             }}
                         >
                             <SwipeableCard
