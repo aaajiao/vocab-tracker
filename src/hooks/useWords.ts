@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import type { Word } from '../types';
+import { deleteCachedAudio, generateCacheKey } from '../services/audioCache';
 
 interface UseWordsProps {
     userId: string | undefined;
@@ -174,6 +175,10 @@ export function useWords({ userId, onLoadComplete, showToast }: UseWordsProps): 
             showToast?.('error', '删除失败');
             return null;
         }
+
+        // Clean up audio cache for the deleted word
+        const cacheKey = generateCacheKey(wordToDelete.language, wordToDelete.word);
+        deleteCachedAudio(cacheKey).catch(() => { }); // Fire and forget
 
         return wordToDelete;
     }, [userId, words, showToast]);

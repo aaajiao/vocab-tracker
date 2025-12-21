@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 import type { SavedSentence, SentenceInput } from '../types';
+import { deleteCachedAudio, generateCacheKey } from '../services/audioCache';
 
 interface UseSentencesProps {
     userId: string | undefined;
@@ -78,6 +79,10 @@ export function useSentences({ userId, showToast }: UseSentencesProps): UseSente
             showToast?.('error', '取消收藏失败');
             return null;
         }
+
+        // Clean up audio cache for the deleted sentence
+        const cacheKey = generateCacheKey(sentenceToDelete.language, sentenceToDelete.sentence);
+        deleteCachedAudio(cacheKey).catch(() => { }); // Fire and forget
 
         return sentenceToDelete;
     }, [savedSentences, showToast]);

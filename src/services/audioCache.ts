@@ -137,6 +137,26 @@ export async function clearAudioCache(): Promise<void> {
     }
 }
 
+// Delete a single cached audio by key
+export async function deleteCachedAudio(key: string): Promise<void> {
+    try {
+        const db = await getDB();
+        return new Promise((resolve) => {
+            const transaction = db.transaction(STORE_NAME, 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.delete(key);
+
+            request.onsuccess = () => resolve();
+            request.onerror = () => {
+                console.warn('Failed to delete cached audio:', request.error);
+                resolve(); // Don't throw, just log
+            };
+        });
+    } catch (error) {
+        console.warn('Failed to delete cached audio:', error);
+    }
+}
+
 // Check if audio is cached (without loading the blob)
 export async function isAudioCached(key: string): Promise<boolean> {
     try {
