@@ -13,7 +13,7 @@ export async function getAIContent(text: string, sourceLang: string, apiKey: str
             },
             body: JSON.stringify({
                 model: "gpt-4o-mini",
-                max_tokens: 300,
+                max_tokens: 400,
                 messages: [
                     { role: "system", content: "You are a translation assistant. Always respond with valid JSON only." },
                     {
@@ -23,6 +23,7 @@ export async function getAIContent(text: string, sourceLang: string, apiKey: str
 Please provide:
 1. Chinese translation (concise, include article for German nouns)
 2. One example sentence in ${langName} with Chinese translation
+3. Etymology (词源) - Brief origin explanation in 1-2 sentences
 
 IMPORTANT: Match the example to the word's nature:
 - If it's an everyday/casual word (like "cool", "hang out", "Gemütlich"), use a casual, daily-life context
@@ -30,7 +31,7 @@ IMPORTANT: Match the example to the word's nature:
 - If it's formal vocabulary, use formal context
 
 Respond in this exact JSON format only, no other text:
-{"translation": "中文翻译", "example": "Example sentence", "exampleCn": "例句中文翻译", "category": "daily|professional|formal"}`
+{"translation": "中文翻译", "example": "Example sentence", "exampleCn": "例句中文翻译", "category": "daily|professional|formal", "etymology": "Brief origin (e.g., 'From Latin pro- + crastinus')"}`
                     }
                 ]
             })
@@ -64,7 +65,7 @@ export async function detectAndGetContent(text: string, apiKey: string): Promise
             },
             body: JSON.stringify({
                 model: "gpt-4o-mini",
-                max_tokens: 300,
+                max_tokens: 400,
                 messages: [
                     { role: "system", content: "You are a translation assistant. Always respond with valid JSON only." },
                     {
@@ -74,11 +75,12 @@ export async function detectAndGetContent(text: string, apiKey: string): Promise
 1. Detect whether it is primarily English or German.
 2. Provide Chinese translation (concise).
 3. Provide one example sentence in the detected language with Chinese translation.
+4. Provide etymology (词源) - Brief origin explanation.
 
 IMPORTANT: Match the example to the word's nature (daily/professional/formal).
 
 Respond in this exact JSON format only:
-{"language": "en|de", "translation": "中文翻译", "example": "Example sentence", "exampleCn": "例句中文翻译", "category": "daily|professional|formal"}`
+{"language": "en|de", "translation": "中文翻译", "example": "Example sentence", "exampleCn": "例句中文翻译", "category": "daily|professional|formal", "etymology": "Brief origin"}`
                     }
                 ]
             })

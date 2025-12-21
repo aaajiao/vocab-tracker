@@ -54,6 +54,7 @@ export function useWords({ userId, onLoadComplete, showToast }: UseWordsProps): 
                     example: w.example || '',
                     exampleCn: w.example_cn || '',
                     category: w.category || '',
+                    etymology: w.etymology || '',
                     date: w.date,
                     timestamp: new Date(w.created_at).getTime()
                 }));
@@ -109,6 +110,7 @@ export function useWords({ userId, onLoadComplete, showToast }: UseWordsProps): 
                     example: w.example || '',
                     exampleCn: w.example_cn || '',
                     category: w.category || '',
+                    etymology: w.etymology || '',
                     date: w.date,
                     timestamp: new Date(w.created_at).getTime()
                 })));
@@ -136,6 +138,7 @@ export function useWords({ userId, onLoadComplete, showToast }: UseWordsProps): 
             example: newWord.example,
             example_cn: newWord.exampleCn,
             category: newWord.category,
+            etymology: newWord.etymology,
             date: newWord.date
         }).select().single();
 
@@ -151,6 +154,7 @@ export function useWords({ userId, onLoadComplete, showToast }: UseWordsProps): 
                 example: data.example || '',
                 exampleCn: data.example_cn || '',
                 category: data.category || '',
+                etymology: data.etymology || '',
                 date: data.date,
                 timestamp: new Date(data.created_at).getTime()
             }, ...prev]);
@@ -207,6 +211,7 @@ export function useWords({ userId, onLoadComplete, showToast }: UseWordsProps): 
             example: word.example,
             example_cn: word.exampleCn,
             category: word.category,
+            etymology: word.etymology,
             date: word.date
         }).select().single();
 
@@ -219,6 +224,7 @@ export function useWords({ userId, onLoadComplete, showToast }: UseWordsProps): 
                 example: data.example || '',
                 exampleCn: data.example_cn || '',
                 category: data.category || '',
+                etymology: data.etymology || '',
                 date: data.date,
                 timestamp: new Date(data.created_at).getTime()
             }, ...prev]);

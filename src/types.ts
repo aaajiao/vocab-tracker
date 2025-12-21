@@ -11,6 +11,7 @@ export interface Word {
     category: 'daily' | 'professional' | 'formal' | '';
     date: string;
     timestamp: number;
+    etymology?: string;
 }
 
 // Saved sentence type
@@ -31,6 +32,7 @@ export interface AIContent {
     example: string;
     exampleCn: string;
     category: 'daily' | 'professional' | 'formal';
+    etymology?: string;
 }
 
 export interface DetectedContent extends AIContent {

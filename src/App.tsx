@@ -34,6 +34,7 @@ interface NewWord {
     example: string;
     exampleCn: string;
     category: 'daily' | 'professional' | 'formal' | '';
+    etymology?: string;
 }
 
 function App() {
@@ -59,7 +60,7 @@ function App() {
     const [searchQuery, setSearchQuery] = useState('');
     const debouncedSearchQuery = useDebounce(searchQuery, DEBOUNCE_DELAY);
     const [isAdding, setIsAdding] = useState(false);
-    const [newWord, setNewWord] = useState<NewWord>({ word: '', meaning: '', language: 'en', example: '', exampleCn: '', category: '' });
+    const [newWord, setNewWord] = useState<NewWord>({ word: '', meaning: '', language: 'en', example: '', exampleCn: '', category: '', etymology: '' });
     const [aiLoading, setAiLoading] = useState(false);
     const [speakingId, setSpeakingId] = useState<string | null>(null);
     const [cachedKeys, setCachedKeys] = useState<Set<string>>(new Set());
@@ -118,7 +119,8 @@ function App() {
                         meaning: content.translation || prev.meaning,
                         example: content.example || '',
                         exampleCn: content.exampleCn || '',
-                        category: content.category || ''
+                        category: content.category || '',
+                        etymology: content.etymology || ''
                     }));
                 }
                 setAiLoading(false);
@@ -157,7 +159,8 @@ function App() {
                         meaning: content.translation,
                         example: content.example,
                         exampleCn: content.exampleCn,
-                        category: content.category
+                        category: content.category,
+                        etymology: content.etymology || ''
                     }));
                 }
                 setAiLoading(false);
@@ -175,10 +178,11 @@ function App() {
             example: newWord.example.trim(),
             exampleCn: newWord.exampleCn.trim(),
             category: newWord.category,
+            etymology: newWord.etymology,
             date: new Date().toLocaleDateString('sv-SE')
         });
 
-        setNewWord({ word: '', meaning: '', language: newWord.language, example: '', exampleCn: '', category: '' });
+        setNewWord({ word: '', meaning: '', language: newWord.language, example: '', exampleCn: '', category: '', etymology: '' });
         setIsAdding(false);
         setSearchQuery('');
     };
@@ -571,8 +575,8 @@ function App() {
             {isAdding && (
                 <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 mb-6 shadow-sm">
                     <div className="flex gap-2 mb-4 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-lg w-fit">
-                        <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${newWord.language === 'en' ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`} onClick={() => setNewWord(p => ({ ...p, language: 'en', word: '', meaning: '', example: '', exampleCn: '', category: '' }))}>🇬🇧 英语</button>
-                        <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${newWord.language === 'de' ? 'bg-white dark:bg-slate-600 text-green-600 dark:text-green-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`} onClick={() => setNewWord(p => ({ ...p, language: 'de', word: '', meaning: '', example: '', exampleCn: '', category: '' }))}>🇩🇪 德语</button>
+                        <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${newWord.language === 'en' ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`} onClick={() => setNewWord(p => ({ ...p, language: 'en', word: '', meaning: '', example: '', exampleCn: '', category: '', etymology: '' }))}>🇬🇧 英语</button>
+                        <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${newWord.language === 'de' ? 'bg-white dark:bg-slate-600 text-green-600 dark:text-green-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`} onClick={() => setNewWord(p => ({ ...p, language: 'de', word: '', meaning: '', example: '', exampleCn: '', category: '', etymology: '' }))}>🇩🇪 德语</button>
                     </div>
                     <input
                         ref={inputRef}
@@ -609,7 +613,7 @@ function App() {
                         <button className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200 active:scale-95 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed" onClick={handleAddWord} disabled={!newWord.word.trim() || !newWord.meaning.trim() || aiLoading || syncing}>
                             {syncing ? '保存中...' : '保存'}
                         </button>
-                        <button className="px-4 py-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors font-medium" onClick={() => { setIsAdding(false); setNewWord({ word: '', meaning: '', language: 'en', example: '', exampleCn: '', category: '' }); }}>取消</button>
+                        <button className="px-4 py-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors font-medium" onClick={() => { setIsAdding(false); setNewWord({ word: '', meaning: '', language: 'en', example: '', exampleCn: '', category: '', etymology: '' }); }}>取消</button>
                     </div>
                 </div>
             )}

@@ -15,6 +15,7 @@ interface FlatListItem {
     example?: string;
     exampleCn?: string;
     category?: string;
+    etymology?: string;
     timestamp?: number;
 }
 
@@ -119,6 +120,22 @@ function VirtualWordList({
                                     </span>
                                 </div>
                                 <div className="text-sm text-slate-600 dark:text-slate-300 mb-2 font-medium">{word.meaning}</div>
+
+                                {/* Etymology Section */}
+                                {word.etymology && (
+                                    <div className="mb-2">
+                                        <div className="text-xs text-slate-500 dark:text-slate-400 bg-amber-50/50 dark:bg-amber-900/10 border border-amber-200/50 dark:border-amber-800/30 rounded-lg px-3 py-2">
+                                            <div className="flex items-start gap-1.5">
+                                                <span className="text-amber-600 dark:text-amber-500 mt-0.5">📖</span>
+                                                <div className="flex-1">
+                                                    <span className="font-medium text-amber-700 dark:text-amber-400">词源：</span>
+                                                    <span className="text-slate-600 dark:text-slate-300">{word.etymology}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {word.example && (
                                     <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 relative group/example">
                                         <div className="text-sm text-slate-700 dark:text-slate-300 mb-0.5 pr-14">{word.example}</div>
