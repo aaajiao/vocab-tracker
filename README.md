@@ -143,7 +143,13 @@ Run this command to update both `package.json` and `package-lock.json`:
 npm version <new-version>  # e.g., npm version 1.5.1
 ```
 
-### �📝 Changelog
+### 📝 Changelog
+
+#### v1.5.1 (2025-12-22)
+- ♻️ **Code Refactoring**: Eliminated code duplication in OpenAI service.
+  - Extracted common API call logic into a unified `callOpenAI` wrapper function.
+  - Added utility functions for language name conversion and JSON parsing.
+  - Reduced code complexity and improved maintainability.
 
 #### v1.5.0 (2025-12-21)
 - ✨ **New Feature (AI)**: Added **Etymology Support**.
@@ -335,6 +341,12 @@ npm version <新版本号>  # 例如: npm version 1.5.1
 ```
 
 ### 📝 更新日志 (Changelog)
+
+#### v1.5.1 (2025-12-22)
+- ♻️ **代码重构**：消除 OpenAI 服务中的代码重复
+  - 提取通用 API 调用逻辑到统一的 `callOpenAI` 封装函数
+  - 新增语言名称转换和 JSON 解析工具函数
+  - 降低代码复杂度，提升可维护性
 
 #### v1.5.0 (2025-12-21)
 - ✨ **新功能 (AI)**：新增 **Etymology (词源解析)** 支持
