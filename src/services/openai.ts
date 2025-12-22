@@ -1,24 +1,90 @@
 // OpenAI API service functions
 import type { AIContent, DetectedContent, RegeneratedExample, CombinedSentence, Word } from '../types';
 
-// Get translation and contextual example
-export async function getAIContent(text: string, sourceLang: string, apiKey: string): Promise<AIContent | null> {
+// Constants
+const OPENAI_API_ENDPOINT = "/api/openai/v1/chat/completions";
+const DEFAULT_MODEL = "gpt-4o-mini";
+
+// Types for internal use
+interface OpenAIMessage {
+    role: "system" | "user";
+    content: string;
+}
+
+interface OpenAIResponse {
+    error?: { message: string };
+    choices?: Array<{
+        message?: {
+            content: string;
+        };
+    }>;
+}
+
+// Utility: Convert language code to full language name
+function getLanguageName(langCode: string): string {
+    return langCode === 'en' ? 'English' : 'German';
+}
+
+// Utility: Parse and clean JSON response from OpenAI
+function parseJSONResponse<T>(content: string): T | null {
     try {
-        const langName = sourceLang === 'en' ? 'English' : 'German';
-        const response = await fetch("/api/openai/v1/chat/completions", {
+        // Remove markdown code blocks if present
+        const cleanedContent = content.trim().replace(/```json\n?|\n?```/g, '').trim();
+        return JSON.parse(cleanedContent);
+    } catch (e) {
+        console.error('JSON parsing error:', e);
+        return null;
+    }
+}
+
+// Core API call wrapper
+async function callOpenAI<T>(
+    messages: OpenAIMessage[],
+    apiKey: string,
+    maxTokens: number = 400
+): Promise<T | null> {
+    try {
+        const response = await fetch(OPENAI_API_ENDPOINT, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
                 "Authorization": `Bearer ${apiKey}`
             },
             body: JSON.stringify({
-                model: "gpt-4o-mini",
-                max_tokens: 400,
-                messages: [
-                    { role: "system", content: "You are a translation assistant. Always respond with valid JSON only." },
-                    {
-                        role: "user",
-                        content: `For this ${langName} word/phrase: "${text}"
+                model: DEFAULT_MODEL,
+                max_tokens: maxTokens,
+                messages
+            })
+        });
+
+        const data: OpenAIResponse = await response.json();
+
+        if (data.error) {
+            console.error('API Error:', data.error);
+            return null;
+        }
+
+        if (data.choices?.[0]?.message?.content) {
+            return parseJSONResponse<T>(data.choices[0].message.content);
+        }
+
+        return null;
+    } catch (e) {
+        console.error('OpenAI API error:', e);
+        return null;
+    }
+}
+
+// Get translation and contextual example
+export async function getAIContent(text: string, sourceLang: string, apiKey: string): Promise<AIContent | null> {
+    const langName = getLanguageName(sourceLang);
+
+    return callOpenAI<AIContent>(
+        [
+            { role: "system", content: "You are a translation assistant. Always respond with valid JSON only." },
+            {
+                role: "user",
+                content: `For this ${langName} word/phrase: "${text}"
 
 Please provide:
 1. Chinese translation (concise, include article for German nouns)
@@ -32,45 +98,21 @@ IMPORTANT: Match the example to the word's nature:
 
 Respond in this exact JSON format only, no other text:
 {"translation": "中文翻译", "example": "Example sentence", "exampleCn": "例句中文翻译", "category": "daily|professional|formal", "etymology": "Brief origin (e.g., 'From Latin pro- + crastinus')"}`
-                    }
-                ]
-            })
-        });
-
-        const data = await response.json();
-        if (data.error) {
-            console.error('API Error', data.error);
-            return null;
-        }
-
-        if (data.choices && data.choices[0] && data.choices[0].message) {
-            const jsonStr = data.choices[0].message.content.trim().replace(/```json\n?|\n?```/g, '').trim();
-            return JSON.parse(jsonStr);
-        }
-        return null;
-    } catch (e) {
-        console.error('OpenAI API error:', e);
-        return null;
-    }
+            }
+        ],
+        apiKey,
+        400
+    );
 }
 
 // Detect language and get content
 export async function detectAndGetContent(text: string, apiKey: string): Promise<DetectedContent | null> {
-    try {
-        const response = await fetch("/api/openai/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-                model: "gpt-4o-mini",
-                max_tokens: 400,
-                messages: [
-                    { role: "system", content: "You are a translation assistant. Always respond with valid JSON only." },
-                    {
-                        role: "user",
-                        content: `Analyze this word/phrase: "${text}"
+    return callOpenAI<DetectedContent>(
+        [
+            { role: "system", content: "You are a translation assistant. Always respond with valid JSON only." },
+            {
+                role: "user",
+                content: `Analyze this word/phrase: "${text}"
 
 1. Detect whether it is primarily English or German.
 2. Provide Chinese translation (concise).
@@ -81,43 +123,23 @@ IMPORTANT: Match the example to the word's nature (daily/professional/formal).
 
 Respond in this exact JSON format only:
 {"language": "en|de", "translation": "中文翻译", "example": "Example sentence", "exampleCn": "例句中文翻译", "category": "daily|professional|formal", "etymology": "Brief origin"}`
-                    }
-                ]
-            })
-        });
-
-        const data = await response.json();
-        if (data.error) return null;
-
-        if (data.choices && data.choices[0] && data.choices[0].message) {
-            const jsonStr = data.choices[0].message.content.trim().replace(/```json\n?|\n?```/g, '').trim();
-            return JSON.parse(jsonStr);
-        }
-        return null;
-    } catch (e) {
-        console.error('Detection error:', e);
-        return null;
-    }
+            }
+        ],
+        apiKey,
+        400
+    );
 }
 
 // Regenerate example
 export async function regenerateExample(word: string, meaning: string, sourceLang: string, apiKey: string): Promise<RegeneratedExample | null> {
-    try {
-        const langName = sourceLang === 'en' ? 'English' : 'German';
-        const response = await fetch("/api/openai/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-                model: "gpt-4o-mini",
-                max_tokens: 200,
-                messages: [
-                    { role: "system", content: "You are a translation assistant. Always respond with valid JSON only." },
-                    {
-                        role: "user",
-                        content: `Generate a NEW, different example sentence for this ${langName} word: "${word}" (meaning: ${meaning})
+    const langName = getLanguageName(sourceLang);
+
+    return callOpenAI<RegeneratedExample>(
+        [
+            { role: "system", content: "You are a translation assistant. Always respond with valid JSON only." },
+            {
+                role: "user",
+                content: `Generate a NEW, different example sentence for this ${langName} word: "${word}" (meaning: ${meaning})
 
 Match the context to the word's nature:
 - Everyday words → casual, daily-life scenarios
@@ -126,46 +148,27 @@ Match the context to the word's nature:
 
 Respond in this exact JSON format only:
 {"example": "New example sentence in ${langName}", "exampleCn": "例句中文翻译"}`
-                    }
-                ]
-            })
-        });
-
-        const data = await response.json();
-        if (data.choices && data.choices[0] && data.choices[0].message) {
-            const jsonStr = data.choices[0].message.content.trim().replace(/```json\n?|\n?```/g, '').trim();
-            return JSON.parse(jsonStr);
-        }
-        return null;
-    } catch (e) {
-        console.error('Regenerate error:', e);
-        return null;
-    }
+            }
+        ],
+        apiKey,
+        200
+    );
 }
 
 // Generate combined sentence using multiple words
 export async function generateCombinedSentence(selectedWords: Word[], language: string, apiKey: string): Promise<CombinedSentence | null> {
-    try {
-        const langName = language === 'en' ? 'English' : 'German';
-        const wordList = selectedWords.map(w => {
-            const cat = w.category ? ` [${w.category}]` : '';
-            return `"${w.word}" (${w.meaning})${cat}`;
-        }).join(', ');
+    const langName = getLanguageName(language);
+    const wordList = selectedWords.map(w => {
+        const cat = w.category ? ` [${w.category}]` : '';
+        return `"${w.word}" (${w.meaning})${cat}`;
+    }).join(', ');
 
-        const response = await fetch("/api/openai/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-                model: "gpt-4o-mini",
-                max_tokens: 400,
-                messages: [
-                    { role: "system", content: "You are a language learning assistant. Always respond with valid JSON only." },
-                    {
-                        role: "user",
-                        content: `Create a natural, grammatically correct ${langName} sentence that uses ALL of these words/phrases: ${wordList}
+    return callOpenAI<CombinedSentence>(
+        [
+            { role: "system", content: "You are a language learning assistant. Always respond with valid JSON only." },
+            {
+                role: "user",
+                content: `Create a natural, grammatically correct ${langName} sentence that uses ALL of these words/phrases: ${wordList}
 
 Requirements:
 - The sentence must use each word correctly according to its meaning
@@ -175,24 +178,9 @@ Requirements:
 
 Respond in this exact JSON format only:
 {"scene": "场景名称（如：日常对话/职场交流/正式写作/学术讨论等，用中文）", "sentence": "The ${langName} sentence", "sentenceCn": "中文翻译"}`
-                    }
-                ]
-            })
-        });
-
-        const data = await response.json();
-        if (data.error) {
-            console.error('API Error', data.error);
-            return null;
-        }
-
-        if (data.choices && data.choices[0] && data.choices[0].message) {
-            const jsonStr = data.choices[0].message.content.trim().replace(/```json\n?|\n?```/g, '').trim();
-            return JSON.parse(jsonStr);
-        }
-        return null;
-    } catch (e) {
-        console.error('Generate sentence error:', e);
-        return null;
-    }
+            }
+        ],
+        apiKey,
+        400
+    );
 }
