@@ -383,7 +383,7 @@ function App() {
                 category: expansionData.sourceWord.category || 'daily',
                 etymology: `通过"${expansionData.sourceWord.word}"扩展学习 (${item.relationType})`,
                 date: new Date().toLocaleDateString('sv-SE')
-            });
+            }, { silent: true });
         }
 
         showToast('success', `已添加 ${selectedItems.length} 个新词`);

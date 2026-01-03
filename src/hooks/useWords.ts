@@ -22,7 +22,7 @@ interface UseWordsReturn {
     words: Word[];
     loading: boolean;
     syncing: boolean;
-    addWord: (newWord: Omit<Word, 'id' | 'timestamp'>) => Promise<void>;
+    addWord: (newWord: Omit<Word, 'id' | 'timestamp'>, options?: { silent?: boolean }) => Promise<void>;
     deleteWord: (id: string) => Promise<Word | null>;
     updateWordExample: (id: string, example: string, exampleCn: string) => Promise<void>;
     restoreWord: (word: Word) => Promise<void>;
@@ -184,7 +184,7 @@ export function useWords({ userId, isOnline = true, onLoadComplete, showToast, o
         }
     };
 
-    const addWord = useCallback(async (newWord: Omit<Word, 'id' | 'timestamp'>) => {
+    const addWord = useCallback(async (newWord: Omit<Word, 'id' | 'timestamp'>, options?: { silent?: boolean }) => {
         if (!userId) return;
         setSyncing(true);
 
@@ -231,14 +231,18 @@ export function useWords({ userId, isOnline = true, onLoadComplete, showToast, o
                 // Update cache
                 const allWords = await getAllCachedWords();
                 await setCachedWords([serverWord, ...allWords]);
-                showToast?.('success', '已添加');
+                if (!options?.silent) {
+                    showToast?.('success', '已添加');
+                }
             }
         } else {
             // Offline: add to local cache and queue for sync
             setWords(prev => [wordWithId, ...prev]);
             await addPendingWord(wordWithId);
             onPendingChange?.();
-            showToast?.('info', '已离线保存，稍后同步');
+            if (!options?.silent) {
+                showToast?.('info', '已离线保存，稍后同步');
+            }
         }
 
         setSyncing(false);
