@@ -50,6 +50,20 @@ export interface CombinedSentence {
     sentenceCn: string;
 }
 
+// Vocabulary expansion types
+export interface ExpansionNewWord {
+    word: string;
+    meaning: string;
+    sentence: string;
+    sentenceCn: string;
+    partOfSpeech?: string;
+    relationType: string;  // synonym/antonym/collocation/thematic/related
+}
+
+export interface ExpansionPreviewItem extends ExpansionNewWord {
+    selected: boolean;
+}
+
 // Sentence data for display
 export interface SentenceData {
     words: Word[];

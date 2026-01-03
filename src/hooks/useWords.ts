@@ -22,7 +22,8 @@ interface UseWordsReturn {
     words: Word[];
     loading: boolean;
     syncing: boolean;
-    addWord: (newWord: Omit<Word, 'id' | 'timestamp'>) => Promise<void>;
+    addWord: (newWord: Omit<Word, 'id' | 'timestamp'>, options?: { silent?: boolean }) => Promise<void>;
+    addWords: (newWords: Omit<Word, 'id' | 'timestamp'>[]) => Promise<void>;
     deleteWord: (id: string) => Promise<Word | null>;
     updateWordExample: (id: string, example: string, exampleCn: string) => Promise<void>;
     restoreWord: (word: Word) => Promise<void>;
@@ -184,7 +185,7 @@ export function useWords({ userId, isOnline = true, onLoadComplete, showToast, o
         }
     };
 
-    const addWord = useCallback(async (newWord: Omit<Word, 'id' | 'timestamp'>) => {
+    const addWord = useCallback(async (newWord: Omit<Word, 'id' | 'timestamp'>, options?: { silent?: boolean }) => {
         if (!userId) return;
         setSyncing(true);
 
@@ -231,14 +232,89 @@ export function useWords({ userId, isOnline = true, onLoadComplete, showToast, o
                 // Update cache
                 const allWords = await getAllCachedWords();
                 await setCachedWords([serverWord, ...allWords]);
-                showToast?.('success', '已添加');
+                if (!options?.silent) {
+                    showToast?.('success', '已添加');
+                }
             }
         } else {
             // Offline: add to local cache and queue for sync
             setWords(prev => [wordWithId, ...prev]);
             await addPendingWord(wordWithId);
             onPendingChange?.();
-            showToast?.('info', '已离线保存，稍后同步');
+            if (!options?.silent) {
+                showToast?.('info', '已离线保存，稍后同步');
+            }
+        }
+
+        setSyncing(false);
+    }, [userId, isOnline, showToast, onPendingChange]);
+
+    // Batched version of addWord for adding multiple words at once with a single state update
+    const addWords = useCallback(async (newWords: Omit<Word, 'id' | 'timestamp'>[]) => {
+        if (!userId || newWords.length === 0) return;
+        setSyncing(true);
+
+        const addedWords: Word[] = [];
+
+        if (isOnline) {
+            // Online: batch insert to Supabase
+            const insertData = newWords.map(w => ({
+                user_id: userId,
+                word: w.word,
+                meaning: w.meaning,
+                language: w.language,
+                example: w.example,
+                example_cn: w.exampleCn,
+                category: w.category,
+                etymology: w.etymology,
+                date: w.date
+            }));
+
+            const { data, error } = await supabase
+                .from('words')
+                .insert(insertData)
+                .select();
+
+            if (error) {
+                console.error('Batch add error:', error);
+                showToast?.('error', '批量添加失败');
+            } else if (data) {
+                for (const d of data) {
+                    addedWords.push({
+                        id: d.id,
+                        word: d.word,
+                        meaning: d.meaning,
+                        language: d.language,
+                        example: d.example || '',
+                        exampleCn: d.example_cn || '',
+                        category: d.category || '',
+                        etymology: d.etymology || '',
+                        date: d.date,
+                        timestamp: new Date(d.created_at).getTime()
+                    });
+                }
+            }
+        } else {
+            // Offline: batch add to local cache
+            for (const w of newWords) {
+                const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                const wordWithId: Word = {
+                    ...w,
+                    id: tempId,
+                    timestamp: Date.now()
+                };
+                addedWords.push(wordWithId);
+                await addPendingWord(wordWithId);
+            }
+            onPendingChange?.();
+        }
+
+        // Single state update with all new words
+        if (addedWords.length > 0) {
+            setWords(prev => [...addedWords, ...prev]);
+            // Update cache with all new words
+            const allCachedWords = await getAllCachedWords();
+            await setCachedWords([...addedWords, ...allCachedWords]);
         }
 
         setSyncing(false);
@@ -374,6 +450,7 @@ export function useWords({ userId, isOnline = true, onLoadComplete, showToast, o
         loading,
         syncing,
         addWord,
+        addWords,
         deleteWord,
         updateWordExample,
         restoreWord,
