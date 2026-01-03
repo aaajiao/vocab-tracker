@@ -32,6 +32,7 @@ A multi-language vocabulary learning application powered by AI, supporting Engli
 - **📤 CSV Export**: Support for exporting vocabulary data.
 - **☁️ Cloud Sync**: Uses Supabase for storage, ensuring data sync across devices.
 - **📱 PWA Ready**: Supports dark/light mode Apple Touch Icons for home screen installation.
+- **📴 Offline Support**: Full offline access with Service Worker caching and IndexedDB data storage. Add/delete words offline and auto-sync when back online.
 
 ### 🚀 Quick Start
 
@@ -100,6 +101,7 @@ vocab-tracker/
 │   ├── hooks/               # Custom React Hooks
 │   │   ├── useAuth.ts
 │   │   ├── useDebounce.ts
+│   │   ├── useNetworkStatus.ts
 │   │   ├── useSentences.ts
 │   │   ├── useTheme.ts
 │   │   ├── useToast.ts
@@ -108,7 +110,10 @@ vocab-tracker/
 │   └── services/            # API Services
 │       ├── audioCache.ts
 │       ├── openai.ts
-│       └── tts.ts
+│       ├── sentencesCache.ts
+│       ├── syncQueue.ts
+│       ├── tts.ts
+│       └── wordsCache.ts
 ├── .vscode/                 # VS Code Config
 ├── index.html               # HTML Template
 ├── vite.config.js           # Vite Config
@@ -144,6 +149,15 @@ npm version <new-version>  # e.g., npm version 1.5.1
 ```
 
 ### 📝 Changelog
+
+#### v1.6.0 (2026-01-03)
+- 📴 **PWA Offline Support**: Full offline capability with Service Worker and IndexedDB.
+  - Service Worker caches all static assets (JS, CSS, HTML, fonts) for offline app access.
+  - IndexedDB caches vocabulary and sentence data locally.
+  - Offline add/delete operations are queued and auto-synced when back online.
+  - Network status indicators show offline mode and pending sync count.
+  - Settings panel now displays data cache statistics with clear options.
+  - Added offline fallback page for complete network failures.
 
 #### v1.5.1 (2025-12-22)
 - ♻️ **Code Refactoring**: Eliminated code duplication in OpenAI service.
@@ -229,6 +243,7 @@ npm version <new-version>  # e.g., npm version 1.5.1
 - **📤 CSV 导出**：支持导出词汇数据
 - **☁️ 云端同步**：使用 Supabase 存储，跨设备同步数据
 - **📱 PWA 支持**：适配 iOS 主屏幕深浅色模式图标
+- **📴 离线支持**：完整离线访问能力，使用 Service Worker 缓存静态资源，IndexedDB 存储数据。支持离线添加/删除单词，恢复网络后自动同步
 
 ### 🚀 快速开始
 
@@ -297,6 +312,7 @@ vocab-tracker/
 │   ├── hooks/               # 自定义 Hooks
 │   │   ├── useAuth.ts
 │   │   ├── useDebounce.ts
+│   │   ├── useNetworkStatus.ts
 │   │   ├── useSentences.ts
 │   │   ├── useTheme.ts
 │   │   ├── useToast.ts
@@ -305,7 +321,10 @@ vocab-tracker/
 │   └── services/            # API 服务
 │       ├── audioCache.ts
 │       ├── openai.ts
-│       └── tts.ts
+│       ├── sentencesCache.ts
+│       ├── syncQueue.ts
+│       ├── tts.ts
+│       └── wordsCache.ts
 ├── .vscode/                 # VS Code 配置
 ├── index.html               # HTML 模板
 ├── vite.config.js           # Vite 配置
@@ -341,6 +360,15 @@ npm version <新版本号>  # 例如: npm version 1.5.1
 ```
 
 ### 📝 更新日志 (Changelog)
+
+#### v1.6.0 (2026-01-03)
+- 📴 **PWA 离线支持**：完整的离线功能，使用 Service Worker 和 IndexedDB
+  - Service Worker 缓存所有静态资源（JS、CSS、HTML、字体），支持离线打开应用
+  - IndexedDB 本地缓存词汇和句子数据
+  - 离线添加/删除操作会排队，恢复网络后自动同步
+  - 网络状态指示器显示离线模式和待同步数量
+  - 设置面板新增数据缓存统计和清除选项
+  - 添加离线回退页面应对完全无网络情况
 
 #### v1.5.1 (2025-12-22)
 - ♻️ **代码重构**：消除 OpenAI 服务中的代码重复
