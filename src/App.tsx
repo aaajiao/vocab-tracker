@@ -63,7 +63,7 @@ function App() {
 
     const {
         words, loading: wordsLoading, syncing,
-        addWord, deleteWord, updateWordExample, restoreWord,
+        addWord, addWords, deleteWord, updateWordExample, restoreWord,
         getFilteredWords, getGroupedByDate, stats,
         refreshFromServer
     } = useWords({
@@ -366,27 +366,39 @@ function App() {
             return;
         }
 
+        // Filter out words that already exist
+        const newWordsToAdd: Omit<Word, 'id' | 'timestamp'>[] = [];
+        const skippedWords: string[] = [];
+
         for (const item of selectedItems) {
-            // Check if word already exists
             const exists = words.some(w => w.word.toLowerCase() === item.word.toLowerCase() && w.language === activeTab);
             if (exists) {
-                showToast('info', `"${item.word}" 已在词汇本中`);
-                continue;
+                skippedWords.push(item.word);
+            } else {
+                newWordsToAdd.push({
+                    word: item.word,
+                    meaning: item.meaning,
+                    language: activeTab as 'en' | 'de',
+                    example: item.sentence,
+                    exampleCn: item.sentenceCn,
+                    category: expansionData.sourceWord.category || 'daily',
+                    etymology: `通过"${expansionData.sourceWord.word}"扩展学习 (${item.relationType})`,
+                    date: new Date().toLocaleDateString('sv-SE')
+                });
             }
-
-            await addWord({
-                word: item.word,
-                meaning: item.meaning,
-                language: activeTab as 'en' | 'de',
-                example: item.sentence,
-                exampleCn: item.sentenceCn,
-                category: expansionData.sourceWord.category || 'daily',
-                etymology: `通过"${expansionData.sourceWord.word}"扩展学习 (${item.relationType})`,
-                date: new Date().toLocaleDateString('sv-SE')
-            }, { silent: true });
         }
 
-        showToast('success', `已添加 ${selectedItems.length} 个新词`);
+        // Batch add all new words with a single state update
+        if (newWordsToAdd.length > 0) {
+            await addWords(newWordsToAdd);
+            showToast('success', `已添加 ${newWordsToAdd.length} 个新词`);
+        }
+
+        // Show info about skipped words (if any and some were added)
+        if (skippedWords.length > 0 && newWordsToAdd.length === 0) {
+            showToast('info', `所选词汇均已在词汇本中`);
+        }
+
         setShowExpansion(false);
         setExpansionData(null);
     };
