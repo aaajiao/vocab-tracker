@@ -26,6 +26,7 @@ import { useSentences } from './hooks/useSentences';
 import { useDebounce } from './hooks/useDebounce';
 import { useToast } from './hooks/useToast';
 import { useUndo } from './hooks/useUndo';
+import { useNetworkStatus } from './hooks/useNetworkStatus';
 
 interface NewWord {
     word: string;
@@ -44,16 +45,44 @@ function App() {
     const { toasts, showToast, dismissToast } = useToast();
     const { deletedItem, markDeleted, handleUndo, dismiss: dismissUndo } = useUndo();
 
+    // Network status
+    const { isOnline, pendingCount, isSyncing: networkSyncing, syncNow, refreshPendingCount } = useNetworkStatus({
+        userId: user?.id,
+        onSyncComplete: (synced, failed) => {
+            if (synced > 0) {
+                showToast('success', `已同步 ${synced} 项`);
+                // Refresh data from server after sync
+                refreshFromServer();
+                refreshSentencesFromServer();
+            }
+            if (failed > 0) {
+                showToast('error', `${failed} 项同步失败`);
+            }
+        }
+    });
+
     const {
         words, loading: wordsLoading, syncing,
         addWord, deleteWord, updateWordExample, restoreWord,
-        getFilteredWords, getGroupedByDate, stats
-    } = useWords({ userId: user?.id, showToast });
+        getFilteredWords, getGroupedByDate, stats,
+        refreshFromServer
+    } = useWords({
+        userId: user?.id,
+        isOnline,
+        showToast,
+        onPendingChange: refreshPendingCount
+    });
 
     const {
         savedSentences, savingId,
-        saveSentence, unsaveSentence, restoreSentence, isSentenceSaved, getSavedSentenceId
-    } = useSentences({ userId: user?.id, showToast });
+        saveSentence, unsaveSentence, restoreSentence, isSentenceSaved, getSavedSentenceId,
+        refreshFromServer: refreshSentencesFromServer
+    } = useSentences({
+        userId: user?.id,
+        isOnline,
+        showToast,
+        onPendingChange: refreshPendingCount
+    });
 
     // Local state
     const [activeTab, setActiveTab] = useState<'all' | 'en' | 'de' | 'saved'>('all');
@@ -297,6 +326,44 @@ function App() {
             {/* Toast Notifications */}
             <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
+            {/* Offline Banner */}
+            {!isOnline && (
+                <div className="fixed top-0 left-0 right-0 bg-amber-500 text-white text-center py-2 text-sm font-medium z-50 flex items-center justify-center gap-2">
+                    <span>📴</span>
+                    <span>离线模式</span>
+                    {pendingCount > 0 && (
+                        <span className="bg-white/20 px-2 py-0.5 rounded-full text-xs">
+                            {pendingCount} 项待同步
+                        </span>
+                    )}
+                </div>
+            )}
+
+            {/* Syncing Banner */}
+            {isOnline && networkSyncing && (
+                <div className="fixed top-0 left-0 right-0 bg-blue-500 text-white text-center py-2 text-sm font-medium z-50 flex items-center justify-center gap-2">
+                    <span className="animate-spin">⟳</span>
+                    <span>正在同步...</span>
+                </div>
+            )}
+
+            {/* Pending Sync Indicator (when online but has pending) */}
+            {isOnline && !networkSyncing && pendingCount > 0 && (
+                <div className="fixed top-0 left-0 right-0 bg-green-500 text-white text-center py-2 text-sm font-medium z-50 flex items-center justify-center gap-2">
+                    <span>✓</span>
+                    <span>已恢复在线</span>
+                    <button
+                        onClick={syncNow}
+                        className="bg-white/20 hover:bg-white/30 px-3 py-0.5 rounded-full text-xs transition-colors"
+                    >
+                        同步 {pendingCount} 项
+                    </button>
+                </div>
+            )}
+
+            {/* Add top padding when banner is shown */}
+            {(!isOnline || networkSyncing || pendingCount > 0) && <div className="h-10" />}
+
             {/* Header */}
             <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-3">
@@ -306,7 +373,15 @@ function App() {
                     <div>
                         <div className="text-xl font-bold text-slate-800 dark:text-slate-100">词汇本</div>
                         <div className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                            <Icons.Cloud /> 云端同步 {syncing && '· 同步中...'}
+                            {isOnline ? (
+                                <>
+                                    <Icons.Cloud /> 云端同步 {syncing && '· 同步中...'}
+                                </>
+                            ) : (
+                                <>
+                                    <span className="text-amber-500">📴</span> 离线模式
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -474,9 +549,9 @@ function App() {
                         <button
                             className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 rounded-xl hover:from-amber-100 hover:to-orange-100 dark:hover:from-amber-900/30 dark:hover:to-orange-900/30 active:scale-[0.98] transition-all font-medium"
                             onClick={handleGenerateSentence}
-                            disabled={!apiKey}
+                            disabled={!apiKey || !isOnline}
                         >
-                            <Icons.Sparkles /> 组合造句
+                            <Icons.Sparkles /> 组合造句 {!isOnline && '(需要网络)'}
                         </button>
                     ) : (
                         <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 shadow-sm">
@@ -671,7 +746,15 @@ function App() {
             )}
 
             <div className="mt-8 text-center text-xs text-slate-400 flex items-center justify-center gap-1 pb-8">
-                <Icons.Cloud /> 数据已同步到云端 · 点击单词听发音
+                {isOnline ? (
+                    <>
+                        <Icons.Cloud /> 数据已同步到云端 · 点击单词听发音
+                    </>
+                ) : (
+                    <>
+                        <span>📴</span> 离线模式 · 数据将在恢复网络后同步
+                    </>
+                )}
             </div>
 
             {/* Unified Undo Toast */}
