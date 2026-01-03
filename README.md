@@ -158,6 +158,9 @@ npm version <new-version>  # e.g., npm version 1.5.1
   - Network status indicators show offline mode and pending sync count.
   - Settings panel now displays data cache statistics with clear options.
   - Added offline fallback page for complete network failures.
+- ✨ **Vocabulary Expansion**: Generate related words from existing vocabulary for contextual learning.
+- 🔤 **Multi-meaning Words**: AI generates multiple common meanings for polysemous words (e.g., "单位; 统一; 团结" for "einheit").
+- 🐛 **Bug Fix**: Fixed blank rendering issue when batch adding words via vocabulary expansion.
 
 #### v1.5.1 (2025-12-22)
 - ♻️ **Code Refactoring**: Eliminated code duplication in OpenAI service.
@@ -369,6 +372,9 @@ npm version <新版本号>  # 例如: npm version 1.5.1
   - 网络状态指示器显示离线模式和待同步数量
   - 设置面板新增数据缓存统计和清除选项
   - 添加离线回退页面应对完全无网络情况
+- ✨ **词汇拓展**：从现有单词生成相关词汇，进行上下文学习
+- 🔤 **多义词支持**：AI 为多义词生成多个常见含义，用分号分隔（如 "einheit" → "单位; 统一; 团结"）
+- 🐛 **Bug 修复**：修复了通过词汇拓展批量添加单词时的空白渲染问题
 
 #### v1.5.1 (2025-12-22)
 - ♻️ **代码重构**：消除 OpenAI 服务中的代码重复
