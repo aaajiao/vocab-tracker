@@ -2,11 +2,20 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import type { Word } from '../types';
 import { deleteCachedAudio, generateCacheKey } from '../services/audioCache';
+import {
+    getAllCachedWords,
+    setCachedWords,
+    addPendingWord,
+    markWordDeleted,
+    updateCachedWord
+} from '../services/wordsCache';
 
 interface UseWordsProps {
     userId: string | undefined;
+    isOnline?: boolean;
     onLoadComplete?: () => void;
     showToast?: (type: 'success' | 'error' | 'info', message: string) => void;
+    onPendingChange?: () => void;
 }
 
 interface UseWordsReturn {
@@ -20,14 +29,15 @@ interface UseWordsReturn {
     getFilteredWords: (activeTab: string, searchQuery: string, todayFilter: boolean) => Word[];
     getGroupedByDate: (filteredWords: Word[]) => Record<string, Word[]>;
     stats: { total: number; en: number; de: number; today: number };
+    refreshFromServer: () => Promise<void>;
 }
 
-export function useWords({ userId, onLoadComplete, showToast }: UseWordsProps): UseWordsReturn {
+export function useWords({ userId, isOnline = true, onLoadComplete, showToast, onPendingChange }: UseWordsProps): UseWordsReturn {
     const [words, setWords] = useState<Word[]>([]);
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
 
-    // Load words from Supabase
+    // Load words - first from cache, then from server if online
     useEffect(() => {
         if (!userId) {
             setLoading(false);
@@ -36,39 +46,85 @@ export function useWords({ userId, onLoadComplete, showToast }: UseWordsProps): 
 
         const loadWords = async () => {
             setLoading(true);
-            const { data, error } = await supabase
-                .from('words')
-                .select('*')
-                .eq('user_id', userId)
-                .order('created_at', { ascending: false });
 
-            if (error) {
-                console.error('Load error:', error);
-                showToast?.('error', '加载词汇失败');
-            } else {
-                const formatted: Word[] = (data || []).map((w: any) => ({
-                    id: w.id,
-                    word: w.word,
-                    meaning: w.meaning,
-                    language: w.language,
-                    example: w.example || '',
-                    exampleCn: w.example_cn || '',
-                    category: w.category || '',
-                    etymology: w.etymology || '',
-                    date: w.date,
-                    timestamp: new Date(w.created_at).getTime()
-                }));
-                setWords(formatted);
-
-                // Migrate localStorage if needed
-                await migrateLocalStorage(userId);
+            // Step 1: Load from cache first (instant display)
+            const cachedWords = await getAllCachedWords();
+            if (cachedWords.length > 0) {
+                setWords(cachedWords);
             }
+
+            // Step 2: If online, fetch from server and update cache
+            if (isOnline) {
+                const { data, error } = await supabase
+                    .from('words')
+                    .select('*')
+                    .eq('user_id', userId)
+                    .order('created_at', { ascending: false });
+
+                if (error) {
+                    console.error('Load error:', error);
+                    if (cachedWords.length === 0) {
+                        showToast?.('error', '加载词汇失败');
+                    }
+                } else {
+                    const formatted: Word[] = (data || []).map((w: any) => ({
+                        id: w.id,
+                        word: w.word,
+                        meaning: w.meaning,
+                        language: w.language,
+                        example: w.example || '',
+                        exampleCn: w.example_cn || '',
+                        category: w.category || '',
+                        etymology: w.etymology || '',
+                        date: w.date,
+                        timestamp: new Date(w.created_at).getTime()
+                    }));
+                    setWords(formatted);
+
+                    // Update cache with server data
+                    await setCachedWords(formatted);
+
+                    // Migrate localStorage if needed
+                    await migrateLocalStorage(userId);
+                }
+            } else if (cachedWords.length === 0) {
+                showToast?.('info', '离线模式 · 无缓存数据');
+            }
+
             setLoading(false);
             onLoadComplete?.();
         };
 
         loadWords();
-    }, [userId]);
+    }, [userId, isOnline]);
+
+    // Refresh from server
+    const refreshFromServer = useCallback(async () => {
+        if (!userId || !isOnline) return;
+
+        const { data, error } = await supabase
+            .from('words')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false });
+
+        if (!error && data) {
+            const formatted: Word[] = data.map((w: any) => ({
+                id: w.id,
+                word: w.word,
+                meaning: w.meaning,
+                language: w.language,
+                example: w.example || '',
+                exampleCn: w.example_cn || '',
+                category: w.category || '',
+                etymology: w.etymology || '',
+                date: w.date,
+                timestamp: new Date(w.created_at).getTime()
+            }));
+            setWords(formatted);
+            await setCachedWords(formatted);
+        }
+    }, [userId, isOnline]);
 
     const migrateLocalStorage = async (uid: string) => {
         const localData = localStorage.getItem('vocab-words-v4');
@@ -102,7 +158,7 @@ export function useWords({ userId, onLoadComplete, showToast }: UseWordsProps): 
                 .order('created_at', { ascending: false });
 
             if (data) {
-                setWords(data.map((w: any) => ({
+                const formatted = data.map((w: any) => ({
                     id: w.id,
                     word: w.word,
                     meaning: w.meaning,
@@ -113,7 +169,9 @@ export function useWords({ userId, onLoadComplete, showToast }: UseWordsProps): 
                     etymology: w.etymology || '',
                     date: w.date,
                     timestamp: new Date(w.created_at).getTime()
-                })));
+                }));
+                setWords(formatted);
+                await setCachedWords(formatted);
             }
 
             localStorage.removeItem('vocab-words-v4');
@@ -130,38 +188,61 @@ export function useWords({ userId, onLoadComplete, showToast }: UseWordsProps): 
         if (!userId) return;
         setSyncing(true);
 
-        const { data, error } = await supabase.from('words').insert({
-            user_id: userId,
-            word: newWord.word,
-            meaning: newWord.meaning,
-            language: newWord.language,
-            example: newWord.example,
-            example_cn: newWord.exampleCn,
-            category: newWord.category,
-            etymology: newWord.etymology,
-            date: newWord.date
-        }).select().single();
+        // Generate a temporary ID for offline use
+        const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const timestamp = Date.now();
+        const wordWithId: Word = {
+            ...newWord,
+            id: tempId,
+            timestamp
+        };
 
-        if (error) {
-            console.error('Add error:', error);
-            showToast?.('error', '添加失败');
+        if (isOnline) {
+            // Online: add directly to Supabase
+            const { data, error } = await supabase.from('words').insert({
+                user_id: userId,
+                word: newWord.word,
+                meaning: newWord.meaning,
+                language: newWord.language,
+                example: newWord.example,
+                example_cn: newWord.exampleCn,
+                category: newWord.category,
+                etymology: newWord.etymology,
+                date: newWord.date
+            }).select().single();
+
+            if (error) {
+                console.error('Add error:', error);
+                showToast?.('error', '添加失败');
+            } else {
+                const serverWord: Word = {
+                    id: data.id,
+                    word: data.word,
+                    meaning: data.meaning,
+                    language: data.language,
+                    example: data.example || '',
+                    exampleCn: data.example_cn || '',
+                    category: data.category || '',
+                    etymology: data.etymology || '',
+                    date: data.date,
+                    timestamp: new Date(data.created_at).getTime()
+                };
+                setWords(prev => [serverWord, ...prev]);
+                // Update cache
+                const allWords = await getAllCachedWords();
+                await setCachedWords([serverWord, ...allWords]);
+                showToast?.('success', '已添加');
+            }
         } else {
-            setWords(prev => [{
-                id: data.id,
-                word: data.word,
-                meaning: data.meaning,
-                language: data.language,
-                example: data.example || '',
-                exampleCn: data.example_cn || '',
-                category: data.category || '',
-                etymology: data.etymology || '',
-                date: data.date,
-                timestamp: new Date(data.created_at).getTime()
-            }, ...prev]);
-            showToast?.('success', '已添加');
+            // Offline: add to local cache and queue for sync
+            setWords(prev => [wordWithId, ...prev]);
+            await addPendingWord(wordWithId);
+            onPendingChange?.();
+            showToast?.('info', '已离线保存，稍后同步');
         }
+
         setSyncing(false);
-    }, [userId, showToast]);
+    }, [userId, isOnline, showToast, onPendingChange]);
 
     const deleteWord = useCallback(async (id: string): Promise<Word | null> => {
         if (!userId) return null;
@@ -172,12 +253,23 @@ export function useWords({ userId, onLoadComplete, showToast }: UseWordsProps): 
         // Optimistic update
         setWords(prev => prev.filter(w => w.id !== id));
 
-        const { error } = await supabase.from('words').delete().eq('id', id);
-        if (error) {
-            // Restore on error
-            setWords(prev => [...prev, wordToDelete].sort((a, b) => b.timestamp - a.timestamp));
-            showToast?.('error', '删除失败');
-            return null;
+        if (isOnline) {
+            // Online: delete from Supabase
+            const { error } = await supabase.from('words').delete().eq('id', id);
+            if (error) {
+                // Restore on error
+                setWords(prev => [...prev, wordToDelete].sort((a, b) => b.timestamp - a.timestamp));
+                showToast?.('error', '删除失败');
+                return null;
+            }
+
+            // Update cache
+            const allWords = await getAllCachedWords();
+            await setCachedWords(allWords.filter(w => w.id !== id));
+        } else {
+            // Offline: mark for deletion in cache
+            await markWordDeleted(id);
+            onPendingChange?.();
         }
 
         // Clean up audio cache for the deleted word
@@ -185,52 +277,73 @@ export function useWords({ userId, onLoadComplete, showToast }: UseWordsProps): 
         deleteCachedAudio(cacheKey).catch(() => { }); // Fire and forget
 
         return wordToDelete;
-    }, [userId, words, showToast]);
+    }, [userId, words, isOnline, showToast, onPendingChange]);
 
     const updateWordExample = useCallback(async (id: string, example: string, exampleCn: string) => {
-        const { error } = await supabase
-            .from('words')
-            .update({ example, example_cn: exampleCn })
-            .eq('id', id);
+        if (isOnline) {
+            const { error } = await supabase
+                .from('words')
+                .update({ example, example_cn: exampleCn })
+                .eq('id', id);
 
-        if (!error) {
-            setWords(prev => prev.map(w => w.id === id ? { ...w, example, exampleCn } : w));
+            if (!error) {
+                setWords(prev => prev.map(w => w.id === id ? { ...w, example, exampleCn } : w));
+                // Update cache
+                await updateCachedWord(id, { example, exampleCn });
+            } else {
+                showToast?.('error', '更新例句失败');
+            }
         } else {
-            showToast?.('error', '更新例句失败');
+            // Offline: just update locally
+            setWords(prev => prev.map(w => w.id === id ? { ...w, example, exampleCn } : w));
+            await updateCachedWord(id, { example, exampleCn });
         }
-    }, [showToast]);
+    }, [isOnline, showToast]);
 
     const restoreWord = useCallback(async (word: Word) => {
         if (!userId) return;
 
-        const { data, error } = await supabase.from('words').insert({
-            user_id: userId,
-            word: word.word,
-            meaning: word.meaning,
-            language: word.language,
-            example: word.example,
-            example_cn: word.exampleCn,
-            category: word.category,
-            etymology: word.etymology,
-            date: word.date
-        }).select().single();
+        if (isOnline) {
+            const { data, error } = await supabase.from('words').insert({
+                user_id: userId,
+                word: word.word,
+                meaning: word.meaning,
+                language: word.language,
+                example: word.example,
+                example_cn: word.exampleCn,
+                category: word.category,
+                etymology: word.etymology,
+                date: word.date
+            }).select().single();
 
-        if (!error && data) {
-            setWords(prev => [{
-                id: data.id,
-                word: data.word,
-                meaning: data.meaning,
-                language: data.language,
-                example: data.example || '',
-                exampleCn: data.example_cn || '',
-                category: data.category || '',
-                etymology: data.etymology || '',
-                date: data.date,
-                timestamp: new Date(data.created_at).getTime()
-            }, ...prev]);
-            showToast?.('success', '已恢复');
+            if (!error && data) {
+                const restoredWord: Word = {
+                    id: data.id,
+                    word: data.word,
+                    meaning: data.meaning,
+                    language: data.language,
+                    example: data.example || '',
+                    exampleCn: data.example_cn || '',
+                    category: data.category || '',
+                    etymology: data.etymology || '',
+                    date: data.date,
+                    timestamp: new Date(data.created_at).getTime()
+                };
+                setWords(prev => [restoredWord, ...prev]);
+                const allWords = await getAllCachedWords();
+                await setCachedWords([restoredWord, ...allWords]);
+                showToast?.('success', '已恢复');
+            }
+        } else {
+            // Offline restore
+            const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            const restoredWord: Word = { ...word, id: tempId, timestamp: Date.now() };
+            setWords(prev => [restoredWord, ...prev]);
+            await addPendingWord(restoredWord);
+            onPendingChange?.();
+            showToast?.('info', '已离线恢复，稍后同步');
         }
-    }, [userId, showToast]);
+    }, [userId, isOnline, showToast, onPendingChange]);
 
     const getFilteredWords = useCallback((activeTab: string, searchQuery: string, todayFilter: boolean) => {
         return words.filter(w => {
@@ -266,7 +379,8 @@ export function useWords({ userId, onLoadComplete, showToast }: UseWordsProps): 
         restoreWord,
         getFilteredWords,
         getGroupedByDate,
-        stats
+        stats,
+        refreshFromServer
     };
 }
 
