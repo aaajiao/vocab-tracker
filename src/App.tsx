@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import type { Word, SentenceData, SavedSentence } from './types';
+import type { Word, SentenceData, SavedSentence, ExpansionPreviewItem } from './types';
 
 // Components
 import { Icons } from './components/Icons';
@@ -15,7 +15,7 @@ import { PageSkeleton } from './components/Skeleton';
 import { DEBOUNCE_DELAY, AI_TYPING_DELAY, STORAGE_KEYS, CATEGORY_CONFIG } from './constants';
 
 // Services
-import { getAIContent, detectAndGetContent, regenerateExample, generateCombinedSentence } from './services/openai';
+import { getAIContent, detectAndGetContent, regenerateExample, generateCombinedSentence, generateVocabularyExpansion } from './services/openai';
 import { speakWord } from './services/tts';
 
 // Hooks
@@ -107,6 +107,15 @@ function App() {
     const [showSentence, setShowSentence] = useState(false);
     const [sentenceData, setSentenceData] = useState<SentenceData | null>(null);
     const [sentenceLoading, setSentenceLoading] = useState(false);
+
+    // Vocabulary expansion state
+    const [showExpansion, setShowExpansion] = useState(false);
+    const [expansionLoading, setExpansionLoading] = useState(false);
+    const [expansionData, setExpansionData] = useState<{
+        sourceWord: Word;
+        theme: string;
+        items: ExpansionPreviewItem[];
+    } | null>(null);
 
     const inputRef = useRef<HTMLInputElement>(null);
     const aiTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -314,6 +323,84 @@ function App() {
         setSentenceLoading(false);
     };
 
+    // Vocabulary expansion handlers
+    const handleVocabularyExpansion = async (word?: Word) => {
+        if (!apiKey || activeTab === 'all' || activeTab === 'saved') return;
+
+        const langWords = words.filter(w => w.language === activeTab);
+        if (langWords.length < 1) return;
+
+        setExpansionLoading(true);
+        setShowExpansion(true);
+        setShowSentence(false);
+        setSentenceData(null);
+
+        // Use provided word or pick random one
+        const sourceWord = word || langWords[Math.floor(Math.random() * langWords.length)];
+
+        const result = await generateVocabularyExpansion(sourceWord, apiKey);
+
+        if (result) {
+            setExpansionData({
+                sourceWord,
+                theme: result.theme,
+                items: result.expansions.map(exp => ({
+                    ...exp,
+                    selected: true
+                }))
+            });
+        } else {
+            setExpansionData(null);
+            showToast('error', '扩展失败，请重试');
+        }
+
+        setExpansionLoading(false);
+    };
+
+    const handleAddSelectedWords = async () => {
+        if (!expansionData || activeTab === 'all' || activeTab === 'saved') return;
+
+        const selectedItems = expansionData.items.filter(item => item.selected);
+        if (selectedItems.length === 0) {
+            showToast('info', '请至少选择一个新词');
+            return;
+        }
+
+        for (const item of selectedItems) {
+            // Check if word already exists
+            const exists = words.some(w => w.word.toLowerCase() === item.word.toLowerCase() && w.language === activeTab);
+            if (exists) {
+                showToast('info', `"${item.word}" 已在词汇本中`);
+                continue;
+            }
+
+            await addWord({
+                word: item.word,
+                meaning: item.meaning,
+                language: activeTab as 'en' | 'de',
+                example: item.sentence,
+                exampleCn: item.sentenceCn,
+                category: expansionData.sourceWord.category || 'daily',
+                etymology: `通过"${expansionData.sourceWord.word}"扩展学习 (${item.relationType})`,
+                date: new Date().toLocaleDateString('sv-SE')
+            });
+        }
+
+        showToast('success', `已添加 ${selectedItems.length} 个新词`);
+        setShowExpansion(false);
+        setExpansionData(null);
+    };
+
+    const toggleWordSelection = (index: number) => {
+        if (!expansionData) return;
+        setExpansionData(prev => {
+            if (!prev) return null;
+            const newItems = [...prev.items];
+            newItems[index] = { ...newItems[index], selected: !newItems[index].selected };
+            return { ...prev, items: newItems };
+        });
+    };
+
     // Show auth form if not logged in
     if (!user && !loading) {
         return <AuthForm onAuth={() => { }} />;
@@ -479,28 +566,28 @@ function App() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
                 <button
                     className={`bg-white dark:bg-slate-800 border rounded-xl p-3 shadow-sm text-left transition-all hover:border-slate-400 dark:hover:border-slate-500 active:scale-95 ${activeTab === 'all' ? 'border-slate-400 dark:border-slate-500 ring-1 ring-slate-400/20' : 'border-slate-200 dark:border-slate-700'}`}
-                    onClick={() => { setActiveTab('all'); setTodayFilter(false); setShowSentence(false); setSentenceData(null); }}
+                    onClick={() => { setActiveTab('all'); setTodayFilter(false); setShowSentence(false); setSentenceData(null); setShowExpansion(false); setExpansionData(null); }}
                 >
                     <div className="text-2xl font-bold text-slate-800 dark:text-slate-100">{allStats.total}</div>
                     <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">总计</div>
                 </button>
                 <button
                     className={`bg-white dark:bg-slate-800 border rounded-xl p-3 shadow-sm text-left transition-all hover:border-blue-400 dark:hover:border-blue-500 active:scale-95 ${activeTab === 'en' ? 'border-blue-400 dark:border-blue-500 ring-1 ring-blue-400/20' : 'border-slate-200 dark:border-slate-700'}`}
-                    onClick={() => { setActiveTab('en'); setTodayFilter(false); setShowSentence(false); setSentenceData(null); }}
+                    onClick={() => { setActiveTab('en'); setTodayFilter(false); setShowSentence(false); setSentenceData(null); setShowExpansion(false); setExpansionData(null); }}
                 >
                     <div className="text-2xl font-bold text-blue-600">{allStats.en}</div>
                     <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">英语</div>
                 </button>
                 <button
                     className={`bg-white dark:bg-slate-800 border rounded-xl p-3 shadow-sm text-left transition-all hover:border-green-400 dark:hover:border-green-500 active:scale-95 ${activeTab === 'de' ? 'border-green-400 dark:border-green-500 ring-1 ring-green-400/20' : 'border-slate-200 dark:border-slate-700'}`}
-                    onClick={() => { setActiveTab('de'); setTodayFilter(false); setShowSentence(false); setSentenceData(null); }}
+                    onClick={() => { setActiveTab('de'); setTodayFilter(false); setShowSentence(false); setSentenceData(null); setShowExpansion(false); setExpansionData(null); }}
                 >
                     <div className="text-2xl font-bold text-green-600">{allStats.de}</div>
                     <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">德语</div>
                 </button>
                 <button
                     className={`bg-white dark:bg-slate-800 border rounded-xl p-3 shadow-sm text-left transition-all hover:border-amber-400 dark:hover:border-amber-500 active:scale-95 ${todayFilter ? 'border-amber-400 dark:border-amber-500 ring-1 ring-amber-400/20' : 'border-slate-200 dark:border-slate-700'}`}
-                    onClick={() => { setTodayFilter(!todayFilter); setActiveTab('all'); setShowSentence(false); setSentenceData(null); }}
+                    onClick={() => { setTodayFilter(!todayFilter); setActiveTab('all'); setShowSentence(false); setSentenceData(null); setShowExpansion(false); setExpansionData(null); }}
                 >
                     <div className="text-2xl font-bold text-amber-600">{allStats.today}</div>
                     <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">今日</div>
@@ -535,25 +622,38 @@ function App() {
                             ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm'
                             : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
                             }`}
-                        onClick={() => { setActiveTab(t.id); setTodayFilter(false); setShowSentence(false); setSentenceData(null); }}
+                        onClick={() => { setActiveTab(t.id); setTodayFilter(false); setShowSentence(false); setSentenceData(null); setShowExpansion(false); setExpansionData(null); }}
                     >
                         {t.label}<span className="ml-1 opacity-60 text-xs">{t.id === 'all' ? allStats.total : allStats[t.id]}</span>
                     </button>
                 ))}
             </div>
 
-            {/* Sentence Generation Panel */}
-            {(activeTab === 'en' || activeTab === 'de') && allStats[activeTab] >= 2 && (
+            {/* Sentence Generation & Vocabulary Expansion Panel */}
+            {(activeTab === 'en' || activeTab === 'de') && allStats[activeTab] >= 1 && (
                 <div className="mb-6">
-                    {!showSentence ? (
-                        <button
-                            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 rounded-xl hover:from-amber-100 hover:to-orange-100 dark:hover:from-amber-900/30 dark:hover:to-orange-900/30 active:scale-[0.98] transition-all font-medium"
-                            onClick={handleGenerateSentence}
-                            disabled={!apiKey || !isOnline}
-                        >
-                            <Icons.Sparkles /> 组合造句 {!isOnline && '(需要网络)'}
-                        </button>
-                    ) : (
+                    {!showSentence && !showExpansion ? (
+                        <div className="flex gap-2">
+                            {/* Combined Sentence Button - requires 2+ words */}
+                            <button
+                                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 rounded-xl hover:from-amber-100 hover:to-orange-100 dark:hover:from-amber-900/30 dark:hover:to-orange-900/30 active:scale-[0.98] transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                onClick={handleGenerateSentence}
+                                disabled={!apiKey || !isOnline || allStats[activeTab] < 2}
+                                title={allStats[activeTab] < 2 ? '需要至少2个单词' : ''}
+                            >
+                                <Icons.Sparkles /> 组合造句
+                            </button>
+
+                            {/* Vocabulary Expansion Button */}
+                            <button
+                                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-400 rounded-xl hover:from-purple-100 hover:to-indigo-100 dark:hover:from-purple-900/30 dark:hover:to-indigo-900/30 active:scale-[0.98] transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                onClick={() => handleVocabularyExpansion()}
+                                disabled={!apiKey || !isOnline}
+                            >
+                                <Icons.Expand /> 词汇扩展
+                            </button>
+                        </div>
+                    ) : showSentence ? (
                         <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 shadow-sm">
                             <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
@@ -642,7 +742,117 @@ function App() {
                                 <div className="text-center text-slate-400 py-4">生成失败，请重试</div>
                             )}
                         </div>
-                    )}
+                    ) : showExpansion ? (
+                        /* Vocabulary Expansion Panel */
+                        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 shadow-sm">
+                            {/* Header */}
+                            <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-2 text-sm font-medium text-purple-600 dark:text-purple-400">
+                                    <Icons.Expand /> 词汇扩展
+                                </div>
+                                <button
+                                    className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-all"
+                                    onClick={() => { setShowExpansion(false); setExpansionData(null); }}
+                                >
+                                    ✕
+                                </button>
+                            </div>
+
+                            {expansionLoading ? (
+                                <div className="space-y-3">
+                                    <div className="h-8 bg-gradient-to-r from-slate-100 via-slate-50 to-slate-100 dark:from-slate-700 dark:via-slate-600 dark:to-slate-700 animate-pulse rounded-lg"></div>
+                                    <div className="h-24 bg-gradient-to-r from-slate-100 via-slate-50 to-slate-100 dark:from-slate-700 dark:via-slate-600 dark:to-slate-700 animate-pulse rounded-lg"></div>
+                                    <div className="h-24 bg-gradient-to-r from-slate-100 via-slate-50 to-slate-100 dark:from-slate-700 dark:via-slate-600 dark:to-slate-700 animate-pulse rounded-lg"></div>
+                                </div>
+                            ) : expansionData ? (
+                                <>
+                                    {/* Source Word Display */}
+                                    <div className="flex items-center gap-2 mb-3 flex-wrap">
+                                        <span className="text-xs text-slate-500 dark:text-slate-400">基于:</span>
+                                        <span className={`px-2.5 py-1 rounded-full text-sm font-medium ${
+                                            activeTab === 'en'
+                                                ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
+                                                : 'bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400'
+                                        }`}>
+                                            {expansionData.sourceWord.word}
+                                        </span>
+                                        <span className="text-xs text-slate-400">→</span>
+                                        <span className="text-xs px-2 py-0.5 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded-full">
+                                            {expansionData.theme}
+                                        </span>
+                                    </div>
+
+                                    {/* New Words List */}
+                                    <div className="space-y-3 mb-4">
+                                        {expansionData.items.map((item, index) => (
+                                            <div
+                                                key={index}
+                                                className={`p-3 rounded-lg border transition-all cursor-pointer ${
+                                                    item.selected
+                                                        ? 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-700'
+                                                        : 'bg-slate-50 dark:bg-slate-900/50 border-slate-100 dark:border-slate-800 opacity-60'
+                                                }`}
+                                                onClick={() => toggleWordSelection(index)}
+                                            >
+                                                {/* Word Header */}
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={item.selected}
+                                                            onChange={() => toggleWordSelection(index)}
+                                                            className="w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                                                        />
+                                                        <span className="font-bold text-slate-800 dark:text-slate-100">
+                                                            {item.word}
+                                                        </span>
+                                                        <span className="text-sm text-slate-600 dark:text-slate-300">
+                                                            {item.meaning}
+                                                        </span>
+                                                    </div>
+                                                    <span className="text-xs px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-full">
+                                                        {item.relationType === 'synonym' ? '近义' :
+                                                         item.relationType === 'antonym' ? '反义' :
+                                                         item.relationType === 'collocation' ? '搭配' :
+                                                         item.relationType === 'thematic' ? '主题' : '相关'}
+                                                    </span>
+                                                </div>
+
+                                                {/* Sentence */}
+                                                <div className="ml-6">
+                                                    <div className="text-sm text-slate-700 dark:text-slate-300 mb-1">
+                                                        {item.sentence}
+                                                    </div>
+                                                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                                                        {item.sentenceCn}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Action Buttons */}
+                                    <div className="flex gap-2">
+                                        <button
+                                            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 active:scale-95 transition-all text-sm font-medium"
+                                            onClick={() => handleVocabularyExpansion()}
+                                        >
+                                            <Icons.Refresh /> 换一个词
+                                        </button>
+                                        <button
+                                            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg active:scale-95 transition-all text-sm font-medium disabled:opacity-50"
+                                            onClick={handleAddSelectedWords}
+                                            disabled={!expansionData.items.some(i => i.selected) || syncing}
+                                        >
+                                            <Icons.Plus /> 添加选中 ({expansionData.items.filter(i => i.selected).length})
+                                        </button>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="text-center text-slate-400 py-4">扩展失败，请重试</div>
+                            )}
+                        </div>
+                    ) : null}
                 </div>
             )}
 

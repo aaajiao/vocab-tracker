@@ -1,5 +1,11 @@
 // OpenAI API service functions
-import type { AIContent, DetectedContent, RegeneratedExample, CombinedSentence, Word } from '../types';
+import type { AIContent, DetectedContent, RegeneratedExample, CombinedSentence, Word, ExpansionNewWord } from '../types';
+
+// Expansion response type
+export interface ExpansionResponse {
+    theme: string;
+    expansions: ExpansionNewWord[];
+}
 
 // Constants
 const OPENAI_API_ENDPOINT = "/api/openai/v1/chat/completions";
@@ -182,5 +188,56 @@ Respond in this exact JSON format only:
         ],
         apiKey,
         400
+    );
+}
+
+// Generate vocabulary expansion from a source word
+export async function generateVocabularyExpansion(
+    sourceWord: Word,
+    apiKey: string
+): Promise<ExpansionResponse | null> {
+    const langName = getLanguageName(sourceWord.language);
+
+    return callOpenAI<ExpansionResponse>(
+        [
+            {
+                role: "system",
+                content: "You are a vocabulary learning assistant. Generate expansion vocabulary based on a source word. Always respond with valid JSON only."
+            },
+            {
+                role: "user",
+                content: `Based on this ${langName} word: "${sourceWord.word}" (meaning: ${sourceWord.meaning})
+
+Generate 2-3 daily-use sentences that:
+1. Each sentence uses the source word naturally
+2. Each sentence introduces ONE new ${langName} word that the learner should know
+3. New words should be related to the source word (synonyms, antonyms, collocations, or thematically related)
+4. New words should be at a similar difficulty level and commonly used in daily life
+5. Sentences should be practical and represent real-world usage scenarios
+
+IMPORTANT:
+- Focus on HIGH-FREQUENCY vocabulary that learners will encounter often
+- Avoid overly technical or rare words
+- Each new word should appear naturally in its sentence context
+- Provide relationship type: "synonym", "antonym", "collocation", "thematic", or "related"
+
+Respond in this exact JSON format only:
+{
+    "theme": "主题名称（用中文，如：工作效率/社交场景/日常生活）",
+    "expansions": [
+        {
+            "word": "the new ${langName} word",
+            "meaning": "中文翻译（简洁，德语名词需包含冠词）",
+            "sentence": "A natural sentence using BOTH the source word and the new word",
+            "sentenceCn": "例句中文翻译",
+            "partOfSpeech": "noun/verb/adjective/adverb",
+            "relationType": "synonym/antonym/collocation/thematic/related"
+        }
+    ]
+}`
+            }
+        ],
+        apiKey,
+        800
     );
 }
