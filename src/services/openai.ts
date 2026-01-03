@@ -93,8 +93,8 @@ export async function getAIContent(text: string, sourceLang: string, apiKey: str
                 content: `For this ${langName} word/phrase: "${text}"
 
 Please provide:
-1. Chinese translation (concise, include article for German nouns)
-2. One example sentence in ${langName} with Chinese translation
+1. Chinese translation - 如果该词有多个常用含义，用分号分隔列出（最多3个），如 "单位; 统一; 团结"。德语名词需包含冠词。
+2. One example sentence in ${langName} with Chinese translation - 选择最能体现该词核心/最常用含义的例句
 3. Etymology (词源) - Brief origin explanation in 1-2 sentences
 
 IMPORTANT: Match the example to the word's nature:
@@ -121,8 +121,8 @@ export async function detectAndGetContent(text: string, apiKey: string): Promise
                 content: `Analyze this word/phrase: "${text}"
 
 1. Detect whether it is primarily English or German.
-2. Provide Chinese translation (concise).
-3. Provide one example sentence in the detected language with Chinese translation.
+2. Provide Chinese translation - 如果该词有多个常用含义，用分号分隔列出（最多3个），如 "单位; 统一; 团结"。德语名词需包含冠词。
+3. Provide one example sentence in the detected language with Chinese translation - 选择最能体现该词核心/最常用含义的例句
 4. Provide etymology (词源) - Brief origin explanation.
 
 IMPORTANT: Match the example to the word's nature (daily/professional/formal).
