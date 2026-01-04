@@ -1,4 +1,4 @@
-import { useRef, memo, useState, useMemo, useEffect } from 'react';
+import { useRef, memo, useState, useMemo } from 'react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import SwipeableCard from './SwipeableCard';
 import { Icons } from './Icons';
@@ -28,14 +28,6 @@ function VirtualWordList({
 }: VirtualWordListProps) {
     const listRef = useRef<HTMLDivElement>(null);
     const [expandedEtymology, setExpandedEtymology] = useState<Set<string>>(new Set());
-    const [scrollMargin, setScrollMargin] = useState(0);
-
-    // Update scrollMargin after DOM mount
-    useEffect(() => {
-        if (listRef.current) {
-            setScrollMargin(listRef.current.offsetTop);
-        }
-    }, []);
 
     const toggleEtymology = (wordId: string) => {
         setExpandedEtymology(prev => {
@@ -83,7 +75,6 @@ function VirtualWordList({
             return baseHeight + exampleHeight + etymologyHeight + spacing;
         },
         overscan: 5,
-        scrollMargin,
     });
 
     return (
@@ -110,7 +101,7 @@ function VirtualWordList({
                                     top: 0,
                                     left: 0,
                                     width: '100%',
-                                    transform: `translateY(${virtualRow.start - scrollMargin}px)`,
+                                    transform: `translateY(${virtualRow.start}px)`,
                                 }}
                                 className="flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 pt-4 pb-2"
                             >
@@ -131,7 +122,7 @@ function VirtualWordList({
                                 top: 0,
                                 left: 0,
                                 width: '100%',
-                                transform: `translateY(${virtualRow.start - scrollMargin}px)`,
+                                transform: `translateY(${virtualRow.start}px)`,
                                 paddingBottom: '16px',
                             }}
                         >
