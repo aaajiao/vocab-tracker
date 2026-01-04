@@ -1,4 +1,4 @@
-import { useRef, memo, useState, useMemo } from 'react';
+import { useRef, memo, useState, useMemo, useCallback } from 'react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import SwipeableCard from './SwipeableCard';
 import { Icons } from './Icons';
@@ -55,25 +55,34 @@ function VirtualWordList({
         return list;
     }, [groupedByDate]);
 
+    // Use ref to access flatList in stable callbacks (avoids infinite re-render loop)
+    const flatListRef = useRef<FlatListItem[]>([]);
+    flatListRef.current = flatList;
+
+    // Stable getItemKey callback - uses ref to avoid dependency on flatList
+    const getItemKey = useCallback((index: number) => {
+        const item = flatListRef.current[index];
+        if (!item) return index;
+        return item.type === 'header' ? `header-${item.date}` : item.id!;
+    }, []);
+
+    // Stable estimateSize callback with etymology height calculation
+    const estimateSize = useCallback((index: number) => {
+        const item = flatListRef.current[index];
+        if (!item) return 48;
+        if (item.type === 'header') return 48;
+        // Word card: base height + example height + etymology height if exists + spacing
+        const baseHeight = 90; // title + meaning
+        const exampleHeight = item.example ? 130 : 0; // example block (increased for multi-line)
+        const etymologyHeight = item.etymology ? 48 : 0; // etymology collapsed button height
+        const spacing = 16; // gap between cards
+        return baseHeight + exampleHeight + etymologyHeight + spacing;
+    }, []);
+
     const virtualizer = useWindowVirtualizer({
         count: flatList.length,
-        // Provide stable keys for better reconciliation
-        getItemKey: (index) => {
-            const item = flatList[index];
-            if (!item) return index;
-            return item.type === 'header' ? `header-${item.date}` : item.id!;
-        },
-        estimateSize: (index) => {
-            const item = flatList[index];
-            if (!item) return 48;
-            if (item.type === 'header') return 48;
-            // Word card: base height + example height + etymology height if exists + spacing
-            const baseHeight = 90; // title + meaning
-            const exampleHeight = item.example ? 130 : 0; // example block (increased for multi-line)
-            const etymologyHeight = item.etymology ? 48 : 0; // etymology collapsed button height
-            const spacing = 16; // gap between cards
-            return baseHeight + exampleHeight + etymologyHeight + spacing;
-        },
+        getItemKey,
+        estimateSize,
         overscan: 5,
     });
 
