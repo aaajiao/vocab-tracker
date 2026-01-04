@@ -57,11 +57,12 @@ function VirtualWordList({
             const item = flatList[index];
             if (!item) return 48;
             if (item.type === 'header') return 48;
-            // Word card: base height + example height if exists + spacing
+            // Word card: base height + example height + etymology height if exists + spacing
             const baseHeight = 90; // title + meaning
             const exampleHeight = item.example ? 130 : 0; // example block (increased for multi-line)
+            const etymologyHeight = item.etymology ? 48 : 0; // etymology collapsed button height
             const spacing = 16; // gap between cards
-            return baseHeight + exampleHeight + spacing;
+            return baseHeight + exampleHeight + etymologyHeight + spacing;
         },
         overscan: 5,
         scrollMargin: listRef.current?.offsetTop ?? 0,
