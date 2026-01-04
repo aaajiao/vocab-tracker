@@ -88,11 +88,15 @@ vocab-tracker/
 │   ├── types.ts             # TypeScript Types
 │   ├── supabaseClient.ts    # Supabase Client
 │   ├── components/          # UI Components
+│   │   ├── AddWordForm.tsx
 │   │   ├── AuthForm.tsx
 │   │   ├── ErrorBoundary.tsx
 │   │   ├── Icons.tsx
+│   │   ├── NetworkBanner.tsx
+│   │   ├── SentencePanel.tsx
 │   │   ├── SettingsPanel.tsx
 │   │   ├── Skeleton.tsx
+│   │   ├── StatsGrid.tsx
 │   │   ├── SwipeableCard.tsx
 │   │   ├── SwipeableSentenceCard.tsx
 │   │   ├── ToastContainer.tsx
@@ -103,6 +107,7 @@ vocab-tracker/
 │   │   ├── useDebounce.ts
 │   │   ├── useNetworkStatus.ts
 │   │   ├── useSentences.ts
+│   │   ├── useSwipeGesture.ts
 │   │   ├── useTheme.ts
 │   │   ├── useToast.ts
 │   │   ├── useUndo.ts
@@ -149,6 +154,16 @@ npm version <new-version>  # e.g., npm version 1.5.1
 ```
 
 ### 📝 Changelog
+
+#### v1.6.1 (2026-01-04)
+- 🛠️ **Stability Improvements**: Fixed potential memory leaks and race conditions.
+  - Fixed `useNetworkStatus` useEffect dependency issue using refs for stable callbacks.
+  - Added AbortController to AI requests to prevent memory leaks on component unmount.
+  - Added LRU cache (max 50) for TTS sessionCache with proper Blob URL cleanup.
+  - Updated `@types/react` and `@types/react-dom` to v19 to match React 19.
+- ♻️ **Code Refactoring**: Extracted reusable components and hooks for better maintainability.
+  - New components: `NetworkBanner`, `StatsGrid`, `AddWordForm`, `SentencePanel`.
+  - New hook: `useSwipeGesture` to eliminate duplicate swipe logic in card components.
 
 #### v1.6.0 (2026-01-03)
 - 📴 **PWA Offline Support**: Full offline capability with Service Worker and IndexedDB.
@@ -302,11 +317,15 @@ vocab-tracker/
 │   ├── types.ts             # TypeScript 类型
 │   ├── supabaseClient.ts    # Supabase 客户端
 │   ├── components/          # UI 组件
+│   │   ├── AddWordForm.tsx
 │   │   ├── AuthForm.tsx
 │   │   ├── ErrorBoundary.tsx
 │   │   ├── Icons.tsx
+│   │   ├── NetworkBanner.tsx
+│   │   ├── SentencePanel.tsx
 │   │   ├── SettingsPanel.tsx
 │   │   ├── Skeleton.tsx
+│   │   ├── StatsGrid.tsx
 │   │   ├── SwipeableCard.tsx
 │   │   ├── SwipeableSentenceCard.tsx
 │   │   ├── ToastContainer.tsx
@@ -317,6 +336,7 @@ vocab-tracker/
 │   │   ├── useDebounce.ts
 │   │   ├── useNetworkStatus.ts
 │   │   ├── useSentences.ts
+│   │   ├── useSwipeGesture.ts
 │   │   ├── useTheme.ts
 │   │   ├── useToast.ts
 │   │   ├── useUndo.ts
@@ -363,6 +383,16 @@ npm version <新版本号>  # 例如: npm version 1.5.1
 ```
 
 ### 📝 更新日志 (Changelog)
+
+#### v1.6.1 (2026-01-04)
+- 🛠️ **稳定性改进**：修复潜在的内存泄漏和竞态条件问题
+  - 使用 refs 修复 `useNetworkStatus` 的 useEffect 依赖问题
+  - 为 AI 请求添加 AbortController，防止组件卸载后内存泄漏
+  - 为 TTS sessionCache 添加 LRU 缓存（最大 50 条）并正确清理 Blob URLs
+  - 更新 `@types/react` 和 `@types/react-dom` 到 v19 以匹配 React 19
+- ♻️ **代码重构**：提取可复用组件和 hooks，提升可维护性
+  - 新增组件：`NetworkBanner`、`StatsGrid`、`AddWordForm`、`SentencePanel`
+  - 新增 hook：`useSwipeGesture` 消除卡片组件中的重复滑动逻辑
 
 #### v1.6.0 (2026-01-03)
 - 📴 **PWA 离线支持**：完整的离线功能，使用 Service Worker 和 IndexedDB
