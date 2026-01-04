@@ -2,8 +2,53 @@
 
 import { getCachedAudio, setCachedAudio, generateCacheKey } from './audioCache';
 
-// Memory cache for current session (Blob URLs)
+// Memory cache for current session (Blob URLs) with LRU eviction
+const MAX_SESSION_CACHE_SIZE = 50;
 const sessionCache = new Map<string, string>();
+const sessionCacheOrder: string[] = []; // Track insertion order for LRU
+
+// Add to session cache with LRU eviction
+function addToSessionCache(key: string, url: string): void {
+    // If key already exists, remove it from order (will be re-added at end)
+    const existingIndex = sessionCacheOrder.indexOf(key);
+    if (existingIndex !== -1) {
+        sessionCacheOrder.splice(existingIndex, 1);
+        // Revoke old URL if different
+        const oldUrl = sessionCache.get(key);
+        if (oldUrl && oldUrl !== url) {
+            URL.revokeObjectURL(oldUrl);
+        }
+    }
+
+    // Evict oldest entries if at capacity
+    while (sessionCacheOrder.length >= MAX_SESSION_CACHE_SIZE) {
+        const oldestKey = sessionCacheOrder.shift();
+        if (oldestKey) {
+            const oldUrl = sessionCache.get(oldestKey);
+            if (oldUrl) {
+                URL.revokeObjectURL(oldUrl);
+            }
+            sessionCache.delete(oldestKey);
+        }
+    }
+
+    // Add new entry
+    sessionCache.set(key, url);
+    sessionCacheOrder.push(key);
+}
+
+// Remove from session cache
+function removeFromSessionCache(key: string): void {
+    const url = sessionCache.get(key);
+    if (url) {
+        URL.revokeObjectURL(url);
+        sessionCache.delete(key);
+        const index = sessionCacheOrder.indexOf(key);
+        if (index !== -1) {
+            sessionCacheOrder.splice(index, 1);
+        }
+    }
+}
 
 // OpenAI Text-to-Speech with persistent IndexedDB caching
 export async function speakWord(
@@ -52,7 +97,7 @@ export async function speakWord(
             setSpeakingId(null);
             return;
         }
-        sessionCache.delete(cacheKey); // Clear bad cache
+        removeFromSessionCache(cacheKey); // Clear bad cache
     }
 
     // 2. Check IndexedDB cache (persistent)
@@ -60,7 +105,7 @@ export async function speakWord(
         const cachedBlob = await getCachedAudio(cacheKey);
         if (cachedBlob) {
             const url = URL.createObjectURL(cachedBlob);
-            sessionCache.set(cacheKey, url); // Add to session cache
+            addToSessionCache(cacheKey, url); // Add to session cache with LRU
             const played = await playAudio(url);
             if (played) {
                 if (onCacheUpdate) onCacheUpdate(cacheKey);
@@ -138,11 +183,11 @@ export async function speakWord(
         const audioBlob = await response.blob();
         const audioUrl = URL.createObjectURL(audioBlob);
 
-        // Save to IndexedDB (persistent) and session cache
+        // Save to IndexedDB (persistent) and session cache with LRU
         await setCachedAudio(cacheKey, audioBlob).catch(e => {
             console.warn('Failed to save to IndexedDB:', e);
         });
-        sessionCache.set(cacheKey, audioUrl);
+        addToSessionCache(cacheKey, audioUrl);
         if (onCacheUpdate) onCacheUpdate(cacheKey);
 
         // Play

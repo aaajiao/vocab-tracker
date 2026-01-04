@@ -119,6 +119,7 @@ function App() {
 
     const inputRef = useRef<HTMLInputElement>(null);
     const aiTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const aiAbortControllerRef = useRef<AbortController | null>(null);
     const ignoreFetch = useRef(false);
 
     const loading = authLoading || wordsLoading;
@@ -137,7 +138,7 @@ function App() {
         if (isAdding && inputRef.current) inputRef.current.focus();
     }, [isAdding]);
 
-    // AI content
+    // AI content with abort controller for cleanup
     useEffect(() => {
         if (ignoreFetch.current) {
             ignoreFetch.current = false;
@@ -147,11 +148,17 @@ function App() {
         if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
         if (!apiKey) return;
 
+        // Abort previous request if still pending
+        aiAbortControllerRef.current?.abort();
+        aiAbortControllerRef.current = new AbortController();
+        const signal = aiAbortControllerRef.current.signal;
+
         aiTimeoutRef.current = setTimeout(async () => {
             if (newWord.word.trim().length >= 1) {
                 setAiLoading(true);
-                const content = await getAIContent(newWord.word.trim(), newWord.language, apiKey);
-                if (content) {
+                const content = await getAIContent(newWord.word.trim(), newWord.language, apiKey, signal);
+                // Only update state if not aborted
+                if (!signal.aborted && content) {
                     setNewWord(prev => ({
                         ...prev,
                         meaning: content.translation || prev.meaning,
@@ -161,10 +168,15 @@ function App() {
                         etymology: content.etymology || ''
                     }));
                 }
-                setAiLoading(false);
+                if (!signal.aborted) {
+                    setAiLoading(false);
+                }
             }
         }, AI_TYPING_DELAY);
-        return () => { if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current); };
+        return () => {
+            if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
+            aiAbortControllerRef.current?.abort();
+        };
     }, [newWord.word, newWord.language, apiKey]);
 
     const handleRegenerate = useCallback(async (wordId: string) => {
@@ -186,10 +198,15 @@ function App() {
             setNewWord(prev => ({ ...prev, word: text }));
 
             if (apiKey) {
-                setAiLoading(true);
-                const content = await detectAndGetContent(text, apiKey);
+                // Abort any previous request
+                aiAbortControllerRef.current?.abort();
+                aiAbortControllerRef.current = new AbortController();
+                const signal = aiAbortControllerRef.current.signal;
 
-                if (content) {
+                setAiLoading(true);
+                const content = await detectAndGetContent(text, apiKey, signal);
+
+                if (!signal.aborted && content) {
                     ignoreFetch.current = true;
                     setNewWord(prev => ({
                         ...prev,
@@ -201,7 +218,9 @@ function App() {
                         etymology: content.etymology || ''
                     }));
                 }
-                setAiLoading(false);
+                if (!signal.aborted) {
+                    setAiLoading(false);
+                }
             }
         }
     };

@@ -43,11 +43,12 @@ function parseJSONResponse<T>(content: string): T | null {
     }
 }
 
-// Core API call wrapper
+// Core API call wrapper with optional abort signal
 async function callOpenAI<T>(
     messages: OpenAIMessage[],
     apiKey: string,
-    maxTokens: number = 400
+    maxTokens: number = 400,
+    signal?: AbortSignal
 ): Promise<T | null> {
     try {
         const response = await fetch(OPENAI_API_ENDPOINT, {
@@ -60,7 +61,8 @@ async function callOpenAI<T>(
                 model: DEFAULT_MODEL,
                 max_tokens: maxTokens,
                 messages
-            })
+            }),
+            signal
         });
 
         const data: OpenAIResponse = await response.json();
@@ -76,13 +78,17 @@ async function callOpenAI<T>(
 
         return null;
     } catch (e) {
+        // Don't log abort errors as they are expected
+        if (e instanceof Error && e.name === 'AbortError') {
+            return null;
+        }
         console.error('OpenAI API error:', e);
         return null;
     }
 }
 
 // Get translation and contextual example
-export async function getAIContent(text: string, sourceLang: string, apiKey: string): Promise<AIContent | null> {
+export async function getAIContent(text: string, sourceLang: string, apiKey: string, signal?: AbortSignal): Promise<AIContent | null> {
     const langName = getLanguageName(sourceLang);
 
     return callOpenAI<AIContent>(
@@ -107,12 +113,13 @@ Respond in this exact JSON format only, no other text:
             }
         ],
         apiKey,
-        400
+        400,
+        signal
     );
 }
 
 // Detect language and get content
-export async function detectAndGetContent(text: string, apiKey: string): Promise<DetectedContent | null> {
+export async function detectAndGetContent(text: string, apiKey: string, signal?: AbortSignal): Promise<DetectedContent | null> {
     return callOpenAI<DetectedContent>(
         [
             { role: "system", content: "You are a translation assistant. Always respond with valid JSON only." },
@@ -132,7 +139,8 @@ Respond in this exact JSON format only:
             }
         ],
         apiKey,
-        400
+        400,
+        signal
     );
 }
 

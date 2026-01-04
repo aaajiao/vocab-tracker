@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { syncPendingOperations, getPendingCount } from '../services/syncQueue';
 
 interface UseNetworkStatusProps {
@@ -21,30 +21,49 @@ export function useNetworkStatus({ userId, onSyncComplete }: UseNetworkStatusPro
     const [isSyncing, setIsSyncing] = useState(false);
     const [lastSyncResult, setLastSyncResult] = useState<{ synced: number; failed: number } | null>(null);
 
+    // Use refs to store latest values for event handlers
+    const userIdRef = useRef(userId);
+    const isSyncingRef = useRef(isSyncing);
+    const onSyncCompleteRef = useRef(onSyncComplete);
+
+    // Keep refs updated
+    useEffect(() => {
+        userIdRef.current = userId;
+    }, [userId]);
+
+    useEffect(() => {
+        isSyncingRef.current = isSyncing;
+    }, [isSyncing]);
+
+    useEffect(() => {
+        onSyncCompleteRef.current = onSyncComplete;
+    }, [onSyncComplete]);
+
     // Refresh pending count
     const refreshPendingCount = useCallback(async () => {
         const count = await getPendingCount();
         setPendingCount(count);
     }, []);
 
-    // Sync pending operations
+    // Sync pending operations - stable reference using refs
     const syncNow = useCallback(async () => {
-        if (!userId || isSyncing || !isOnline) return;
+        if (!userIdRef.current || isSyncingRef.current || !navigator.onLine) return;
 
         setIsSyncing(true);
         try {
-            const result = await syncPendingOperations(userId);
+            const result = await syncPendingOperations(userIdRef.current);
             setLastSyncResult({ synced: result.synced, failed: result.failed });
-            await refreshPendingCount();
-            onSyncComplete?.(result.synced, result.failed);
+            const count = await getPendingCount();
+            setPendingCount(count);
+            onSyncCompleteRef.current?.(result.synced, result.failed);
         } catch (error) {
             console.error('Sync failed:', error);
         } finally {
             setIsSyncing(false);
         }
-    }, [userId, isSyncing, isOnline, refreshPendingCount, onSyncComplete]);
+    }, []); // Empty deps - uses refs for latest values
 
-    // Handle online/offline events
+    // Handle online/offline events - only bind once
     useEffect(() => {
         const handleOnline = () => {
             setIsOnline(true);
@@ -63,7 +82,7 @@ export function useNetworkStatus({ userId, onSyncComplete }: UseNetworkStatusPro
             window.removeEventListener('online', handleOnline);
             window.removeEventListener('offline', handleOffline);
         };
-    }, [syncNow]);
+    }, [syncNow]); // syncNow is now stable
 
     // Initial pending count
     useEffect(() => {
