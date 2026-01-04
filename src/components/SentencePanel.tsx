@@ -8,7 +8,6 @@ interface SentencePanelProps {
     sentenceLoading: boolean;
     speakingId: string | null;
     savingId: string | null;
-    apiKey: string;
     onClose: () => void;
     onRegenerate: () => void;
     onSpeak: (text: string, language: string, id: string) => void;

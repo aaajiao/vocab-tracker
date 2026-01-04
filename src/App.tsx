@@ -10,6 +10,9 @@ import UndoToast from './components/UndoToast';
 import ToastContainer from './components/ToastContainer';
 import SwipeableSentenceCard from './components/SwipeableSentenceCard';
 import { PageSkeleton } from './components/Skeleton';
+import { NetworkBanner } from './components/NetworkBanner';
+import { StatsGrid, type TabId } from './components/StatsGrid';
+import { AddWordForm } from './components/AddWordForm';
 
 // Constants
 import { DEBOUNCE_DELAY, AI_TYPING_DELAY, STORAGE_KEYS, CATEGORY_CONFIG } from './constants';
@@ -85,7 +88,7 @@ function App() {
     });
 
     // Local state
-    const [activeTab, setActiveTab] = useState<'all' | 'en' | 'de' | 'saved'>('all');
+    const [activeTab, setActiveTab] = useState<TabId>('all');
     const [searchQuery, setSearchQuery] = useState('');
     const debouncedSearchQuery = useDebounce(searchQuery, DEBOUNCE_DELAY);
     const [isAdding, setIsAdding] = useState(false);
@@ -117,7 +120,6 @@ function App() {
         items: ExpansionPreviewItem[];
     } | null>(null);
 
-    const inputRef = useRef<HTMLInputElement>(null);
     const aiTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const aiAbortControllerRef = useRef<AbortController | null>(null);
     const ignoreFetch = useRef(false);
@@ -132,11 +134,6 @@ function App() {
             }
         }
     }, [apiKey, loading]);
-
-    // Focus
-    useEffect(() => {
-        if (isAdding && inputRef.current) inputRef.current.focus();
-    }, [isAdding]);
 
     // AI content with abort controller for cleanup
     useEffect(() => {
@@ -444,40 +441,13 @@ function App() {
             {/* Toast Notifications */}
             <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
-            {/* Offline Banner */}
-            {!isOnline && (
-                <div className="fixed top-0 left-0 right-0 bg-amber-500 text-white text-center py-2 text-sm font-medium z-50 flex items-center justify-center gap-2">
-                    <span>📴</span>
-                    <span>离线模式</span>
-                    {pendingCount > 0 && (
-                        <span className="bg-white/20 px-2 py-0.5 rounded-full text-xs">
-                            {pendingCount} 项待同步
-                        </span>
-                    )}
-                </div>
-            )}
-
-            {/* Syncing Banner */}
-            {isOnline && networkSyncing && (
-                <div className="fixed top-0 left-0 right-0 bg-blue-500 text-white text-center py-2 text-sm font-medium z-50 flex items-center justify-center gap-2">
-                    <span className="animate-spin">⟳</span>
-                    <span>正在同步...</span>
-                </div>
-            )}
-
-            {/* Pending Sync Indicator (when online but has pending) */}
-            {isOnline && !networkSyncing && pendingCount > 0 && (
-                <div className="fixed top-0 left-0 right-0 bg-green-500 text-white text-center py-2 text-sm font-medium z-50 flex items-center justify-center gap-2">
-                    <span>✓</span>
-                    <span>已恢复在线</span>
-                    <button
-                        onClick={syncNow}
-                        className="bg-white/20 hover:bg-white/30 px-3 py-0.5 rounded-full text-xs transition-colors"
-                    >
-                        同步 {pendingCount} 项
-                    </button>
-                </div>
-            )}
+            {/* Network Status Banner */}
+            <NetworkBanner
+                isOnline={isOnline}
+                isSyncing={networkSyncing}
+                pendingCount={pendingCount}
+                onSyncNow={syncNow}
+            />
 
             {/* Add top padding when banner is shown */}
             {(!isOnline || networkSyncing || pendingCount > 0) && <div className="h-10" />}
@@ -594,36 +564,27 @@ function App() {
             )}
 
             {/* Stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-                <button
-                    className={`bg-white dark:bg-slate-800 border rounded-xl p-3 shadow-sm text-left transition-all hover:border-slate-400 dark:hover:border-slate-500 active:scale-95 ${activeTab === 'all' ? 'border-slate-400 dark:border-slate-500 ring-1 ring-slate-400/20' : 'border-slate-200 dark:border-slate-700'}`}
-                    onClick={() => { setActiveTab('all'); setTodayFilter(false); setShowSentence(false); setSentenceData(null); setShowExpansion(false); setExpansionData(null); }}
-                >
-                    <div className="text-2xl font-bold text-slate-800 dark:text-slate-100">{allStats.total}</div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">总计</div>
-                </button>
-                <button
-                    className={`bg-white dark:bg-slate-800 border rounded-xl p-3 shadow-sm text-left transition-all hover:border-blue-400 dark:hover:border-blue-500 active:scale-95 ${activeTab === 'en' ? 'border-blue-400 dark:border-blue-500 ring-1 ring-blue-400/20' : 'border-slate-200 dark:border-slate-700'}`}
-                    onClick={() => { setActiveTab('en'); setTodayFilter(false); setShowSentence(false); setSentenceData(null); setShowExpansion(false); setExpansionData(null); }}
-                >
-                    <div className="text-2xl font-bold text-blue-600">{allStats.en}</div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">英语</div>
-                </button>
-                <button
-                    className={`bg-white dark:bg-slate-800 border rounded-xl p-3 shadow-sm text-left transition-all hover:border-green-400 dark:hover:border-green-500 active:scale-95 ${activeTab === 'de' ? 'border-green-400 dark:border-green-500 ring-1 ring-green-400/20' : 'border-slate-200 dark:border-slate-700'}`}
-                    onClick={() => { setActiveTab('de'); setTodayFilter(false); setShowSentence(false); setSentenceData(null); setShowExpansion(false); setExpansionData(null); }}
-                >
-                    <div className="text-2xl font-bold text-green-600">{allStats.de}</div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">德语</div>
-                </button>
-                <button
-                    className={`bg-white dark:bg-slate-800 border rounded-xl p-3 shadow-sm text-left transition-all hover:border-amber-400 dark:hover:border-amber-500 active:scale-95 ${todayFilter ? 'border-amber-400 dark:border-amber-500 ring-1 ring-amber-400/20' : 'border-slate-200 dark:border-slate-700'}`}
-                    onClick={() => { setTodayFilter(!todayFilter); setActiveTab('all'); setShowSentence(false); setSentenceData(null); setShowExpansion(false); setExpansionData(null); }}
-                >
-                    <div className="text-2xl font-bold text-amber-600">{allStats.today}</div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">今日</div>
-                </button>
-            </div>
+            <StatsGrid
+                stats={allStats}
+                activeTab={activeTab}
+                todayFilter={todayFilter}
+                onTabChange={(tab) => {
+                    setActiveTab(tab);
+                    setTodayFilter(false);
+                    setShowSentence(false);
+                    setSentenceData(null);
+                    setShowExpansion(false);
+                    setExpansionData(null);
+                }}
+                onTodayFilterToggle={() => {
+                    setTodayFilter(!todayFilter);
+                    setActiveTab('all');
+                    setShowSentence(false);
+                    setSentenceData(null);
+                    setShowExpansion(false);
+                    setExpansionData(null);
+                }}
+            />
 
             {/* Search */}
             <div className="flex gap-3 mb-6">
@@ -889,49 +850,17 @@ function App() {
 
             {/* Add Form */}
             {isAdding && (
-                <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 mb-6 shadow-sm">
-                    <div className="flex gap-2 mb-4 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-lg w-fit">
-                        <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${newWord.language === 'en' ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`} onClick={() => setNewWord(p => ({ ...p, language: 'en', word: '', meaning: '', example: '', exampleCn: '', category: '', etymology: '' }))}>🇬🇧 英语</button>
-                        <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${newWord.language === 'de' ? 'bg-white dark:bg-slate-600 text-green-600 dark:text-green-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`} onClick={() => setNewWord(p => ({ ...p, language: 'de', word: '', meaning: '', example: '', exampleCn: '', category: '', etymology: '' }))}>🇩🇪 德语</button>
-                    </div>
-                    <input
-                        ref={inputRef}
-                        className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-slate-400 dark:focus:border-slate-500 mb-2 text-slate-800 dark:text-slate-100 font-medium"
-                        placeholder="输入单词或短语"
-                        value={newWord.word}
-                        onChange={e => setNewWord(p => ({ ...p, word: e.target.value }))}
-                    />
-                    {aiLoading ? (
-                        <>
-                            <div className="h-10 bg-gradient-to-r from-slate-100 via-slate-50 to-slate-100 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 animate-pulse rounded-lg flex items-center px-3 text-sm text-slate-400 gap-2 mb-2"><Icons.Sparkles /> GPT 分析中...</div>
-                            <div className="h-16 bg-gradient-to-r from-slate-100 via-slate-50 to-slate-100 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 animate-pulse rounded-lg mb-2"></div>
-                        </>
-                    ) : (
-                        <>
-                            <div className="relative mb-2">
-                                <input
-                                    className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-slate-400 dark:focus:border-slate-500 text-slate-800 dark:text-slate-100"
-                                    placeholder="中文翻译"
-                                    value={newWord.meaning}
-                                    onChange={e => setNewWord(p => ({ ...p, meaning: e.target.value }))}
-                                />
-                                {newWord.meaning && <div className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-500"><Icons.Sparkles /></div>}
-                            </div>
-                            {newWord.example && (
-                                <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 mb-4">
-                                    <div className="text-sm text-slate-700 dark:text-slate-300 mb-1">{newWord.example}</div>
-                                    <div className="text-xs text-slate-500 dark:text-slate-400">{newWord.exampleCn}</div>
-                                </div>
-                            )}
-                        </>
-                    )}
-                    <div className="flex gap-2">
-                        <button className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200 active:scale-95 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed" onClick={handleAddWord} disabled={!newWord.word.trim() || !newWord.meaning.trim() || aiLoading || syncing}>
-                            {syncing ? '保存中...' : '保存'}
-                        </button>
-                        <button className="px-4 py-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors font-medium" onClick={() => { setIsAdding(false); setNewWord({ word: '', meaning: '', language: 'en', example: '', exampleCn: '', category: '', etymology: '' }); }}>取消</button>
-                    </div>
-                </div>
+                <AddWordForm
+                    newWord={newWord}
+                    setNewWord={setNewWord}
+                    aiLoading={aiLoading}
+                    syncing={syncing}
+                    onSave={handleAddWord}
+                    onCancel={() => {
+                        setIsAdding(false);
+                        setNewWord({ word: '', meaning: '', language: 'en', example: '', exampleCn: '', category: '', etymology: '' });
+                    }}
+                />
             )}
 
             {/* Word List */}
