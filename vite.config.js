@@ -82,8 +82,29 @@ export default defineConfig({
       }
     })
   ],
+  // ===========================================
+  // Development Server Configuration
+  // 开发服务器配置
+  // ===========================================
+  // Note: These settings only affect `bun run dev` / `npm run dev`.
+  // They do NOT affect Vercel production deployment.
+  // 注意：以下配置仅影响开发服务器，不影响 Vercel 生产部署。
+  // ===========================================
   server: {
+    // Allow access from external hosts (0.0.0.0)
+    // 允许从外部主机访问（绑定 0.0.0.0）
     host: true,
+
+    // Whitelist for allowed hostnames (security feature)
+    // Docker/OrbStack environment uses this domain
+    // 允许的主机名白名单（安全特性）
+    // Docker/OrbStack 环境使用此域名访问
+    allowedHosts: ['opencode.orb.local'],
+
+    // OpenAI API proxy (development only)
+    // Vercel uses rewrites in vercel.json for production
+    // OpenAI API 代理（仅开发环境）
+    // Vercel 生产环境使用 vercel.json 中的 rewrites 配置
     proxy: {
       '/api/openai': {
         target: 'https://api.openai.com',

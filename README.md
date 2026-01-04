@@ -38,8 +38,8 @@ A multi-language vocabulary learning application powered by AI, supporting Engli
 
 #### Prerequisites
 
-- Node.js 19+
-- npm or pnpm
+- Node.js 19+ (or Bun 1.0+)
+- npm, pnpm, or bun
 - **OpenAI API Key (Required)**: [Get it here](https://platform.openai.com/api-keys)
   > ⚠️ **Note**: Without an OpenAI API Key, the AI translation, example generation, and TTS features will not function. The app will prompt you for the key upon launch.
 
@@ -50,31 +50,62 @@ A multi-language vocabulary learning application powered by AI, supporting Engli
 git clone <repository-url>
 cd vocab-tracker
 
-# Install dependencies
-npm install
+# Install dependencies (choose one)
+npm install   # Standard Node.js
+bun install   # If using Bun runtime
 ```
 
-#### Configure API Key
+#### Configure Environment Variables
 
-**Method 1: Environment Variable (Recommended)**
-
-Create a `.env` file:
+Create a `.env` file (copy from `.env.example`):
 
 ```env
+# Required: Supabase connection
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+
+# Optional: Can also be set in app settings
 VITE_OPENAI_API_KEY=sk-proj-xxxxx
 ```
 
-**Method 2: In-App Settings**
-
-Launch the app, click the settings icon ⚙️ in the top right, and enter your API Key.
+> **Tip**: You can also enter the OpenAI API Key directly in the app settings (⚙️ icon).
 
 #### Start Development Server
 
 ```bash
+# Standard Node.js
 npm run dev
+
+# Or using Bun (faster)
+bun run dev
 ```
 
 Visit http://localhost:5173
+
+#### Running in Docker / OrbStack
+
+When running in a Docker container (e.g., OrbStack environment):
+
+```bash
+# Start the dev server in background
+nohup bun run dev > server.log 2>&1 &
+
+# Access via OrbStack magic domain
+# http://opencode.orb.local:5173/
+```
+
+> **Note**: The `vite.config.js` has been configured with `allowedHosts` to permit access from the OrbStack domain.
+
+#### Deploying to Vercel
+
+Simply push to your Git repository. Vercel will automatically:
+1. Detect the Vite framework
+2. Run `npm install` and `vite build`
+3. Deploy the static files
+
+Make sure to configure environment variables in Vercel dashboard:
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
 
 ### 📁 Project Structure
 
@@ -252,8 +283,8 @@ npm version <new-version>  # e.g., npm version 1.5.1
 
 #### 前提条件
 
-- Node.js 19+
-- npm 或 pnpm
+- Node.js 19+（或 Bun 1.0+）
+- npm、pnpm 或 bun
 - **OpenAI API Key（必需）**：[获取地址](https://platform.openai.com/api-keys)
   > ⚠️ **注意**：没有 OpenAI API Key 将无法使用本项目的 AI 翻译、例句生成和语音朗读功能。应用启动后会提示您输入 API Key。
 
@@ -264,31 +295,62 @@ npm version <new-version>  # e.g., npm version 1.5.1
 git clone <repository-url>
 cd vocab-tracker
 
-# 安装依赖
-npm install
+# 安装依赖（选择其一）
+npm install   # 标准 Node.js
+bun install   # 如果使用 Bun 运行时
 ```
 
-#### 配置 API Key
+#### 配置环境变量
 
-**方式一：环境变量（推荐）**
-
-创建 `.env` 文件：
+创建 `.env` 文件（可从 `.env.example` 复制）：
 
 ```env
+# 必需：Supabase 连接配置
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+
+# 可选：也可以在应用内设置
 VITE_OPENAI_API_KEY=sk-proj-xxxxx
 ```
 
-**方式二：应用内设置**
-
-启动应用后，点击右上角的设置图标 ⚙️，输入 API Key。
+> **提示**：OpenAI API Key 也可以在应用设置中直接输入（点击 ⚙️ 图标）。
 
 #### 启动开发服务器
 
 ```bash
+# 标准 Node.js
 npm run dev
+
+# 或使用 Bun（更快）
+bun run dev
 ```
 
 访问 http://localhost:5173
+
+#### 在 Docker / OrbStack 中运行
+
+在 Docker 容器（如 OrbStack 环境）中运行时：
+
+```bash
+# 后台启动开发服务器
+nohup bun run dev > server.log 2>&1 &
+
+# 通过 OrbStack 魔法域名访问
+# http://opencode.orb.local:5173/
+```
+
+> **说明**：`vite.config.js` 已配置 `allowedHosts`，允许从 OrbStack 域名访问。
+
+#### 部署到 Vercel
+
+只需推送到 Git 仓库，Vercel 会自动：
+1. 检测 Vite 框架
+2. 执行 `npm install` 和 `vite build`
+3. 部署静态文件
+
+请确保在 Vercel 控制台配置环境变量：
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
 
 ### 📁 项目结构
 
