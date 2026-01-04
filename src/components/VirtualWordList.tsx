@@ -1,4 +1,4 @@
-import { useRef, memo, useState } from 'react';
+import { useRef, memo, useState, useMemo, useCallback } from 'react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import SwipeableCard from './SwipeableCard';
 import { Icons } from './Icons';
@@ -41,30 +41,49 @@ function VirtualWordList({
         });
     };
 
-    // Flatten grouped data into a single list with date headers
-    const flatList: FlatListItem[] = [];
-    Object.entries(groupedByDate)
-        .sort(([a], [b]) => b.localeCompare(a))
-        .forEach(([date, dateWords]) => {
-            flatList.push({ type: 'header', date, count: dateWords.length });
-            dateWords.sort((a, b) => b.timestamp - a.timestamp)
-                .forEach(word => flatList.push({ type: 'word', ...word }));
-        });
+    // Memoize flatList to prevent unnecessary recalculations
+    const flatList = useMemo(() => {
+        const list: FlatListItem[] = [];
+        Object.entries(groupedByDate)
+            .sort(([a], [b]) => b.localeCompare(a))
+            .forEach(([date, dateWords]) => {
+                list.push({ type: 'header', date, count: dateWords.length });
+                [...dateWords]
+                    .sort((a, b) => b.timestamp - a.timestamp)
+                    .forEach(word => list.push({ type: 'word', ...word }));
+            });
+        return list;
+    }, [groupedByDate]);
+
+    // Use ref to access flatList in stable callbacks (avoids infinite re-render loop)
+    const flatListRef = useRef<FlatListItem[]>([]);
+    flatListRef.current = flatList;
+
+    // Stable getItemKey callback - uses ref to avoid dependency on flatList
+    const getItemKey = useCallback((index: number) => {
+        const item = flatListRef.current[index];
+        if (!item) return index;
+        return item.type === 'header' ? `header-${item.date}` : item.id!;
+    }, []);
+
+    // Stable estimateSize callback with etymology height calculation
+    const estimateSize = useCallback((index: number) => {
+        const item = flatListRef.current[index];
+        if (!item) return 48;
+        if (item.type === 'header') return 48;
+        // Word card: base height + example height + etymology height if exists + spacing
+        const baseHeight = 90; // title + meaning
+        const exampleHeight = item.example ? 130 : 0; // example block (increased for multi-line)
+        const etymologyHeight = item.etymology ? 48 : 0; // etymology collapsed button height
+        const spacing = 16; // gap between cards
+        return baseHeight + exampleHeight + etymologyHeight + spacing;
+    }, []);
 
     const virtualizer = useWindowVirtualizer({
         count: flatList.length,
-        estimateSize: (index) => {
-            const item = flatList[index];
-            if (!item) return 48;
-            if (item.type === 'header') return 48;
-            // Word card: base height + example height if exists + spacing
-            const baseHeight = 90; // title + meaning
-            const exampleHeight = item.example ? 130 : 0; // example block (increased for multi-line)
-            const spacing = 16; // gap between cards
-            return baseHeight + exampleHeight + spacing;
-        },
+        getItemKey,
+        estimateSize,
         overscan: 5,
-        scrollMargin: listRef.current?.offsetTop ?? 0,
     });
 
     return (
@@ -91,7 +110,7 @@ function VirtualWordList({
                                     top: 0,
                                     left: 0,
                                     width: '100%',
-                                    transform: `translateY(${virtualRow.start - (virtualizer.options.scrollMargin || 0)}px)`,
+                                    transform: `translateY(${virtualRow.start}px)`,
                                 }}
                                 className="flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 pt-4 pb-2"
                             >
@@ -112,7 +131,7 @@ function VirtualWordList({
                                 top: 0,
                                 left: 0,
                                 width: '100%',
-                                transform: `translateY(${virtualRow.start - (virtualizer.options.scrollMargin || 0)}px)`,
+                                transform: `translateY(${virtualRow.start}px)`,
                                 paddingBottom: '16px',
                             }}
                         >
