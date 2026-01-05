@@ -1,118 +1,198 @@
-# Vocab Tracker Development Guide
+# Vocab Tracker - Agent Development Guide
 
-This document outlines the development workflows, code style, and conventions for the Vocab Tracker project.
+## Quick Reference
 
-## 🛠️ Build & Verification
+| Action | Command |
+|--------|---------|
+| **Dev Server** | `bun run dev` |
+| **Build** | `bun run build` |
+| **Type Check** | `bun x tsc` |
+| **Preview Build** | `bun run preview` |
 
-This project uses **Vite** with **React** and **TypeScript**.
+> **Runtime**: Bun (Node.js is NOT installed). Use `bun` instead of `npm`.
 
-### Key Commands
+## Build & Verification
 
-- **Development Server:** `bun run dev` (or `npm run dev`)
-  - Starts the local development server at `http://localhost:5173`.
-- **Build:** `bun run build` (or `npm run build`)
-  - Compiles the application to the `dist` directory.
-- **Preview Build:** `bun run preview` (or `npm run preview`)
-  - Previews the production build locally.
-- **Type Check:** `bun x tsc` (or `npx tsc`)
-  - Runs the TypeScript compiler to check for type errors.
-  - *Note:* There is no strict linting script (eslint) configured in `package.json`. Rely on TypeScript for code correctness.
+### Commands
+```bash
+bun run dev       # Start dev server at http://localhost:5173
+bun run build     # Production build to dist/
+bun x tsc         # Type check only (no emit)
+bun run preview   # Preview production build
+```
 
-### Testing
-- Currently, there are **no automated tests** (Jest/Vitest) set up for this project.
-- Manual verification is required for UI changes.
+### Pre-commit Checklist
+1. Run `bun x tsc` - must have zero errors
+2. Run `bun run build` - must complete successfully
+3. Manual UI verification (no automated tests)
 
-## 📂 Project Structure
+### No Linting/Formatting Tools
+- No ESLint or Prettier configured
+- Rely on TypeScript strict mode for correctness
+- Follow existing code patterns for consistency
 
-- **`src/components/`**: UI components (functional, mostly controlled).
-- **`src/services/`**: API integration (OpenAI, Supabase, TTS). Business logic often resides here.
-- **`src/hooks/`**: Custom React hooks (`useAuth`, `useWords`, etc.) for managing state and side effects.
-- **`src/types.ts`**: Centralized TypeScript definitions.
-- **`src/constants.ts`**: App-wide constants (magic numbers, config).
+## Project Structure
 
-## 📝 Code Style & Conventions
+```
+src/
+├── App.tsx              # Main application (~57k LOC, contains most UI logic)
+├── main.tsx             # Entry point
+├── index.css            # Global styles + Tailwind
+├── types.ts             # Shared TypeScript interfaces
+├── constants.ts         # App-wide constants (timing, categories, keys)
+├── supabaseClient.ts    # Supabase initialization
+├── components/          # Reusable UI components
+├── hooks/               # Custom React hooks (useAuth, useWords, etc.)
+└── services/            # API integrations (OpenAI, TTS, caching)
+```
 
-### Language & Localization
-- **Codebase Language:** TypeScript.
-- **Comments & UI:** Primary language for comments and UI text is **Chinese (Simplified)**, as the app targets Chinese speakers learning English/German.
-- **Variable/Function Names:** English (CamelCase).
+## Code Style & Conventions
 
 ### TypeScript
-- **Strict Mode:** Enabled. Avoid `any` where possible.
-- **Interfaces:** Define props and data structures in `types.ts` if shared, or locally if private.
-- **Type Inference:** Prefer inference for simple state (e.g., `useState(false)`), explicit types for complex objects.
+- **Strict mode enabled** - avoid `any` where possible
+- Shared types go in `types.ts`; local types can be defined in-file
+- Prefer type inference for simple values: `useState(false)` not `useState<boolean>(false)`
+- Export interfaces for component props
 
 ### React Components
-- **Functional Components:** Use `function ComponentName() {}` syntax.
-- **Hooks:** Extensive use of custom hooks to separate logic from UI.
-- **Memoization:** Use `React.memo`, `useMemo`, and `useCallback` proactively for performance, especially in lists (e.g., `VirtualWordList`).
-- **Imports:** Group imports: React -> Types -> Components -> Constants -> Services -> Hooks.
-- **State Management:** Local state + Supabase for persistence.
+```typescript
+// Use function declaration syntax
+function ComponentName({ prop1, prop2 }: Props) {
+    // ... component logic
+}
 
-### Styling (Tailwind CSS)
-- Use **Tailwind v4** utility classes directly in `className`.
-- **Dark Mode:** Support `dark:` prefix for all color-dependent classes.
-- **Responsive:** Use `sm:`, `md:`, `lg:` prefixes.
-- **Icons:** Use the `Icons` component wrapper (lucide-react or similar SVG icons).
+export default memo(ComponentName);  // Wrap with memo for performance
+```
 
-### API & Services
-- **Supabase:** Used for backend/auth. Client is initialized in `supabaseClient.ts`.
-- **OpenAI:** All AI interaction logic is encapsulated in `src/services/openai.ts`.
-- **Error Handling:** Use `try/catch` in async services and return `null` or structured error objects.
+- **Functional components only** - no class components
+- Use `React.memo`, `useMemo`, `useCallback` proactively
+- Custom hooks for reusable logic (see `src/hooks/`)
+
+### Import Order
+```typescript
+import { useState, useEffect, memo } from 'react';    // 1. React
+import type { Word, SavedSentence } from '../types';  // 2. Types
+import { Icons } from './Icons';                       // 3. Components
+import { STORAGE_KEYS, CATEGORIES } from '../constants'; // 4. Constants
+import { getAIContent } from '../services/openai';    // 5. Services
+import { useAuth } from '../hooks/useAuth';           // 6. Hooks
+```
 
 ### Naming Conventions
-- **Files:** PascalCase for React components (`AuthForm.tsx`), camelCase for utilities/hooks (`useAuth.ts`, `openai.ts`).
-- **Components:** PascalCase (`VirtualWordList`).
-- **Functions:** camelCase (`getAIContent`).
-- **Constants:** UPPER_CASE (`STORAGE_KEYS`).
+| Type | Convention | Example |
+|------|------------|---------|
+| Components | PascalCase | `VirtualWordList.tsx` |
+| Hooks | camelCase with `use` prefix | `useAuth.ts` |
+| Services | camelCase | `openai.ts` |
+| Constants | UPPER_SNAKE_CASE | `STORAGE_KEYS` |
+| Functions | camelCase | `getAIContent` |
+| Interfaces | PascalCase | `SwipeableCardProps` |
 
-## ⚠️ Important Rules
-1. **Supabase & AI Keys:** Never hardcode API keys. Use environment variables or local storage (as implemented).
-2. **Offline Support:** The app is a PWA with offline capabilities (IndexedDB/Service Worker). Ensure changes respect offline/online states.
-3. **Immutability:** Treat state as immutable.
+### Language & Localization
+- **Code**: English (variables, functions, comments in code logic)
+- **UI Text & User-facing Comments**: Chinese (Simplified) - the app targets Chinese speakers
+- **Example**: `// 获取初始会话` for comments, but `getSession()` for function names
 
-## 🚀 Environment & Deployment (2026 Update)
+## Styling (Tailwind CSS v4)
 
-### Running in OrbStack / Docker (Bun Environment)
+### Usage
+- Utility classes directly in `className`
+- Dark mode: use `dark:` prefix for all color-dependent classes
+- Responsive: use `sm:`, `md:`, `lg:` prefixes
 
-This project runs in a specialized Docker environment based on `oven/bun`.
+```tsx
+<div className="bg-white dark:bg-slate-800 p-4 sm:p-6 rounded-xl">
+```
 
-- **Runtime:** Bun (Node.js & npm are **NOT** installed).
-- **Package Manager:** Use `bun` instead of `npm`.
-  - Install: `bun install`
-  - Run Dev: `bun run dev`
-  - Build: `bun run build`
+### Custom Animations
+Defined in `index.css`:
+- `.animate-pulse-ring` - for playing audio state
+- `.animate-slide-up` - for undo toast
+- `.animate-slide-in` - for notifications
 
-### Configuration Fixes & Troubleshooting
+### Device Detection (CSS)
+Use capability-based detection, NOT screen width:
+- `.hover-device-show` / `.hover-device-hide` - for mouse/trackpad devices
+- `.touch-device-show` / `.touch-device-hide` - for touch devices
 
-#### 1. Host Access (`vite.config.js`)
-To allow access via `opencode.orb.local`, the `server.allowedHosts` configuration must be set. This fixes the "Blocked request" error.
+## API & Services
 
-```javascript
-server: {
-  host: true,
-  allowedHosts: ['opencode.orb.local'], 
-  // ...
+### Error Handling Pattern
+```typescript
+async function apiCall(): Promise<Result | null> {
+    try {
+        const response = await fetch(...);
+        const data = await response.json();
+        if (data.error) {
+            console.error('API Error:', data.error);
+            return null;
+        }
+        return parseResponse(data);
+    } catch (e) {
+        console.error('Request failed:', e);
+        return null;
+    }
 }
 ```
 
-#### 2. Environment Variables (`.env`)
-The application requires a `.env` file in the project root (`vocab-tracker/`) to connect to Supabase.
+### OpenAI Integration (`services/openai.ts`)
+- All AI calls go through `callOpenAI<T>()` wrapper
+- JSON responses cleaned of markdown code blocks before parsing
+- Returns `null` on failure, typed result on success
 
-**Required Variables:**
+### Supabase (`supabaseClient.ts`)
+- Auth and data persistence
+- Environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+
+### Caching Services
+- `audioCache.ts` - IndexedDB for TTS audio
+- `wordsCache.ts` - IndexedDB for offline word storage
+- `sentencesCache.ts` - IndexedDB for offline sentences
+- `syncQueue.ts` - Queues offline operations for sync
+
+## Important Rules
+
+### DO
+- Treat state as immutable
+- Use environment variables for API keys
+- Support offline/online states (PWA)
+- Use existing Icons component for SVG icons
+- Match existing patterns in similar files
+
+### DON'T
+- Hardcode API keys
+- Use `any` type unless absolutely necessary
+- Ignore TypeScript errors
+- Break offline functionality
+- Add new dependencies without justification
+
+## Environment Setup
+
+### Required `.env` Variables
 ```env
-VITE_SUPABASE_URL=your_supabase_url
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+# Optional - can be set in app settings UI
+VITE_OPENAI_API_KEY=sk-proj-xxxxx
 ```
-If missing, duplicate `.env.example` to `.env` and fill in your actual credentials.
 
-### How to Run & Access
+### Docker/OrbStack
+```bash
+# Start dev server in background
+nohup bun run dev > server.log 2>&1 &
 
-1.  **Start Server (Background):**
-    ```bash
-    nohup bun run dev > server.log 2>&1 &
-    ```
-2.  **Access URL:**
-    [http://opencode.orb.local:5173/](http://opencode.orb.local:5173/)
-3.  **Logs:**
-    Check `server.log` for output if the server fails to start.
+# Access via OrbStack domain
+# http://opencode.orb.local:5173/
+```
+
+The `vite.config.js` has `allowedHosts: true` for container access.
+
+## Testing & Verification
+
+No automated tests are configured. For changes:
+
+1. **Type Safety**: `bun x tsc` must pass
+2. **Build**: `bun run build` must succeed
+3. **Manual Testing**: Verify UI changes in browser
+4. **Offline Mode**: Test with DevTools Network → Offline
+5. **Dark Mode**: Toggle and verify all color-dependent styles
