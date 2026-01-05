@@ -95,11 +95,9 @@ export default defineConfig({
     // 允许从外部主机访问（绑定 0.0.0.0）
     host: true,
 
-    // Whitelist for allowed hostnames (security feature)
-    // Docker/OrbStack environment uses this domain
-    // 允许的主机名白名单（安全特性）
-    // Docker/OrbStack 环境使用此域名访问
-    allowedHosts: ['opencode.orb.local'],
+    // Allow all hostnames (development only)
+    // 允许所有主机名访问（仅开发环境）
+    allowedHosts: true,
 
     // OpenAI API proxy (development only)
     // Vercel uses rewrites in vercel.json for production
