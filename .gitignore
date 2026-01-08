@@ -44,4 +44,5 @@ Thumbs.db
 server.log
 
 # OpenCode (personal tool config)
+.claude/
 .opencode/
