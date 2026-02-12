@@ -59,7 +59,7 @@ async function callOpenAI<T>(
             body: JSON.stringify({
                 model: DEFAULT_MODEL,
                 max_completion_tokens: maxTokens,
-                reasoning: { effort: 'none' },
+                reasoning_effort: 'none',
                 messages
             })
         });
