@@ -277,13 +277,33 @@ function App() {
     }, []);
 
     const exportWords = useCallback(() => {
-        const csv = ['Word,Meaning,Language,Example,Example_CN,Category,Date']
-            .concat(words.map(w => `"${w.word}","${w.meaning}","${w.language}","${w.example}","${w.exampleCn || ''}","${w.category || ''}","${w.date}"`))
-            .join('\n');
-        const blob = new Blob([csv], { type: 'text/csv' });
+        const langLabel = { en: '英语', de: '德语' } as const;
+        const catLabel = { daily: '日常', professional: '专业', formal: '正式' } as const;
+        // 按日期分组
+        const grouped: Record<string, typeof words> = {};
+        for (const w of words) {
+            (grouped[w.date] ||= []).push(w);
+        }
+        const dates = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
+        const lines: string[] = [`# 词汇本`, ``, `> 导出时间：${new Date().toLocaleString('zh-CN')}　共 ${words.length} 词`, ``];
+        for (const date of dates) {
+            const label = new Date(date).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+            lines.push(`## ${label}`, ``);
+            for (const w of grouped[date]) {
+                const lang = langLabel[w.language] || w.language;
+                const cat = catLabel[w.category as keyof typeof catLabel] || '';
+                lines.push(`### ${w.word}${cat ? `　\`${cat}\`` : ''}`);
+                lines.push(`- **释义**：${w.meaning}　_(${lang})_`);
+                if (w.example) lines.push(`- **例句**：${w.example}`);
+                if (w.exampleCn) lines.push(`- **例句翻译**：${w.exampleCn}`);
+                if (w.etymology) lines.push(`- **词源**：${w.etymology}`);
+                lines.push(``);
+            }
+        }
+        const blob = new Blob([lines.join('\n')], { type: 'text/markdown' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `vocab-${new Date().toLocaleDateString('sv-SE')}.csv`;
+        a.download = `vocab-${new Date().toLocaleDateString('sv-SE')}.md`;
         a.click();
         showToast('success', '导出成功');
     }, [words, showToast]);
