@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import { supabase } from '../supabaseClient';
 import { Icons } from './Icons';
 import type { AuthFormProps } from '../types';
@@ -33,8 +33,8 @@ function AuthForm({ onAuth }: AuthFormProps) {
                 if (error) throw error;
                 setMessage('重置链接已发送！请查看您的邮箱。');
             }
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : String(err));
         }
         setLoading(false);
     };
@@ -84,13 +84,13 @@ function AuthForm({ onAuth }: AuthFormProps) {
                     )}
 
                     {error && (
-                        <div style={{ fontSize: '0.75rem', color: '#ef4444', marginBottom: '0.5rem' }}>
+                        <div className="text-xs text-red-500 mb-2">
                             {error}
                         </div>
                     )}
 
                     {message && (
-                        <div style={{ fontSize: '0.75rem', color: '#059669', marginBottom: '0.5rem' }}>
+                        <div className="text-xs text-emerald-600 mb-2">
                             {message}
                         </div>
                     )}
@@ -147,4 +147,4 @@ function AuthForm({ onAuth }: AuthFormProps) {
     );
 }
 
-export default AuthForm;
+export default memo(AuthForm);

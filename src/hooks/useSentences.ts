@@ -81,7 +81,7 @@ export function useSentences({ userId, isOnline = true, showToast, onPendingChan
         setSavingId(sentenceObj.sentence);
 
         // Generate temp ID for offline use
-        const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
         const now = new Date().toISOString();
 
         if (isOnline) {
@@ -179,7 +179,7 @@ export function useSentences({ userId, isOnline = true, showToast, onPendingChan
             }
         } else {
             // Offline restore
-            const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
             const restoredSentence: SavedSentence = {
                 ...sentence,
                 id: tempId,

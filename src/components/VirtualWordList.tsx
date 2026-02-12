@@ -27,7 +27,7 @@ function VirtualWordList({
     saveSentence, unsaveSentence, isSentenceSaved, getSavedSentenceId, savingId
 }: VirtualWordListProps) {
     const listRef = useRef<HTMLDivElement>(null);
-    const [expandedEtymology, setExpandedEtymology] = useState<Set<string>>(new Set());
+    const [expandedEtymology, setExpandedEtymology] = useState<Set<string>>(() => new Set());
 
     const toggleEtymology = (wordId: string) => {
         setExpandedEtymology(prev => {

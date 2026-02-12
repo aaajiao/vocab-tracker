@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Icons } from './Icons';
 import type { Toast as ToastType } from '../hooks/useToast';
 
@@ -34,4 +35,4 @@ function ToastContainer({ toasts, onDismiss }: ToastContainerProps) {
     );
 }
 
-export default ToastContainer;
+export default memo(ToastContainer);

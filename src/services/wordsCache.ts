@@ -15,7 +15,7 @@ export interface CachedWord extends Word {
 export interface PendingOperation {
     id: string;
     type: 'add_word' | 'delete_word' | 'update_word';
-    data: any;
+    data: Word | { id: string };
     createdAt: number;
     retryCount: number;
 }

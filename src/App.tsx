@@ -92,7 +92,7 @@ function App() {
     const [newWord, setNewWord] = useState<NewWord>({ word: '', meaning: '', language: 'en', example: '', exampleCn: '', category: '', etymology: '' });
     const [aiLoading, setAiLoading] = useState(false);
     const [speakingId, setSpeakingId] = useState<string | null>(null);
-    const [cachedKeys, setCachedKeys] = useState<Set<string>>(new Set());
+    const [cachedKeys, setCachedKeys] = useState<Set<string>>(() => new Set());
     const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
     const [apiKey, setApiKey] = useState<string>(() => {
         const savedKey = localStorage.getItem(STORAGE_KEYS.API_KEY);
@@ -303,7 +303,11 @@ function App() {
         setShowSentence(true);
 
         const count = Math.min(langWords.length, Math.floor(Math.random() * 3) + 2);
-        const shuffled = [...langWords].sort(() => Math.random() - 0.5);
+        const shuffled = [...langWords];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
         const selectedWords = shuffled.slice(0, count);
 
         const result = await generateCombinedSentence(selectedWords, activeTab, apiKey);
@@ -694,9 +698,9 @@ function App() {
                                     )}
 
                                     <div className="flex flex-wrap gap-2 mb-3">
-                                        {sentenceData.words.map((w, i) => (
+                                        {sentenceData.words.map((w) => (
                                             <span
-                                                key={i}
+                                                key={w.id}
                                                 className={`px-2.5 py-1 rounded-full text-sm font-medium ${activeTab === 'en'
                                                     ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
                                                     : 'bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400'
@@ -798,7 +802,7 @@ function App() {
                                     <div className="space-y-3 mb-4">
                                         {expansionData.items.map((item, index) => (
                                             <div
-                                                key={index}
+                                                key={item.word}
                                                 className={`p-3 rounded-lg border transition-all cursor-pointer ${
                                                     item.selected
                                                         ? 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-700'

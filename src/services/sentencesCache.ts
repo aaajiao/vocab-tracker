@@ -15,7 +15,7 @@ export interface CachedSentence extends SavedSentence {
 export interface PendingSentenceOperation {
     id: string;
     type: 'add_sentence' | 'delete_sentence';
-    data: any;
+    data: SavedSentence | { id: string };
     createdAt: number;
     retryCount: number;
 }

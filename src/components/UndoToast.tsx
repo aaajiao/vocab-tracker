@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, memo } from 'react';
 import type { DeletedItem } from '../hooks/useUndo';
 
 interface UndoToastProps {
@@ -80,4 +80,4 @@ function UndoToast({ deletedItem, onUndo, onDismiss, duration = 5000 }: UndoToas
     );
 }
 
-export default UndoToast;
+export default memo(UndoToast);

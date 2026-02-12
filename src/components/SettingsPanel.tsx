@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, memo } from 'react';
 import type { SettingsPanelProps } from '../types';
 import { Icons } from './Icons';
 import { getCacheStats, clearAudioCache } from '../services/tts';
@@ -167,4 +167,4 @@ function SettingsPanel({ apiKey, setApiKey, userEmail }: SettingsPanelProps) {
     );
 }
 
-export default SettingsPanel;
+export default memo(SettingsPanel);

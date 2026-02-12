@@ -123,7 +123,7 @@ export interface UndoToastProps {
 }
 
 export interface AuthFormProps {
-    onAuth: (user: any) => void;
+    onAuth: () => void;
 }
 
 // Speaker icon props

@@ -10,6 +10,21 @@ import {
     updateCachedWord
 } from '../services/wordsCache';
 
+// Supabase 返回的 words 表行类型（snake_case 列名）
+interface SupabaseWordRow {
+    id: string;
+    user_id: string;
+    word: string;
+    meaning: string;
+    language: 'en' | 'de';
+    example: string | null;
+    example_cn: string | null;
+    category: string | null;
+    etymology: string | null;
+    date: string;
+    created_at: string;
+}
+
 interface UseWordsProps {
     userId: string | undefined;
     isOnline?: boolean;
@@ -68,14 +83,14 @@ export function useWords({ userId, isOnline = true, onLoadComplete, showToast, o
                         showToast?.('error', '加载词汇失败');
                     }
                 } else {
-                    const formatted: Word[] = (data || []).map((w: any) => ({
+                    const formatted: Word[] = (data || []).map((w: SupabaseWordRow) => ({
                         id: w.id,
                         word: w.word,
                         meaning: w.meaning,
                         language: w.language,
                         example: w.example || '',
                         exampleCn: w.example_cn || '',
-                        category: w.category || '',
+                        category: (w.category || '') as Word['category'],
                         etymology: w.etymology || '',
                         date: w.date,
                         timestamp: new Date(w.created_at).getTime()
@@ -110,14 +125,14 @@ export function useWords({ userId, isOnline = true, onLoadComplete, showToast, o
             .order('created_at', { ascending: false });
 
         if (!error && data) {
-            const formatted: Word[] = data.map((w: any) => ({
+            const formatted: Word[] = data.map((w: SupabaseWordRow) => ({
                 id: w.id,
                 word: w.word,
                 meaning: w.meaning,
                 language: w.language,
                 example: w.example || '',
                 exampleCn: w.example_cn || '',
-                category: w.category || '',
+                category: (w.category || '') as Word['category'],
                 etymology: w.etymology || '',
                 date: w.date,
                 timestamp: new Date(w.created_at).getTime()
@@ -146,7 +161,7 @@ export function useWords({ userId, isOnline = true, onLoadComplete, showToast, o
                     language: w.language,
                     example: w.example,
                     example_cn: w.exampleCn,
-                    category: w.category || '',
+                    category: (w.category || '') as Word['category'],
                     date: w.date
                 }, { onConflict: 'user_id,word,language' });
             }
@@ -159,14 +174,14 @@ export function useWords({ userId, isOnline = true, onLoadComplete, showToast, o
                 .order('created_at', { ascending: false });
 
             if (data) {
-                const formatted = data.map((w: any) => ({
+                const formatted = data.map((w: SupabaseWordRow) => ({
                     id: w.id,
                     word: w.word,
                     meaning: w.meaning,
                     language: w.language,
                     example: w.example || '',
                     exampleCn: w.example_cn || '',
-                    category: w.category || '',
+                    category: (w.category || '') as Word['category'],
                     etymology: w.etymology || '',
                     date: w.date,
                     timestamp: new Date(w.created_at).getTime()
@@ -190,7 +205,7 @@ export function useWords({ userId, isOnline = true, onLoadComplete, showToast, o
         setSyncing(true);
 
         // Generate a temporary ID for offline use
-        const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
         const timestamp = Date.now();
         const wordWithId: Word = {
             ...newWord,
@@ -297,7 +312,7 @@ export function useWords({ userId, isOnline = true, onLoadComplete, showToast, o
         } else {
             // Offline: batch add to local cache
             for (const w of newWords) {
-                const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
                 const wordWithId: Word = {
                     ...w,
                     id: tempId,
@@ -412,7 +427,7 @@ export function useWords({ userId, isOnline = true, onLoadComplete, showToast, o
             }
         } else {
             // Offline restore
-            const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
             const restoredWord: Word = { ...word, id: tempId, timestamp: Date.now() };
             setWords(prev => [restoredWord, ...prev]);
             await addPendingWord(restoredWord);

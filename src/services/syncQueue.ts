@@ -34,7 +34,7 @@ async function processWordOperations(userId: string): Promise<{ synced: number; 
     for (const op of operations) {
         try {
             if (op.type === 'add_word') {
-                const word = op.data;
+                const word = op.data as import('./wordsCache').CachedWord;
                 const { data, error } = await supabase.from('words').insert({
                     user_id: userId,
                     word: word.word,
@@ -66,9 +66,9 @@ async function processWordOperations(userId: string): Promise<{ synced: number; 
                 await removePendingOperation(op.id);
                 synced++;
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             failed++;
-            errors.push(`Word op ${op.type}: ${error.message || 'Unknown error'}`);
+            errors.push(`Word op ${op.type}: ${error instanceof Error ? error.message : String(error)}`);
             console.error(`Failed to sync word operation:`, op, error);
         }
     }
@@ -86,7 +86,7 @@ async function processSentenceOperations(userId: string): Promise<{ synced: numb
     for (const op of operations) {
         try {
             if (op.type === 'add_sentence') {
-                const sentence = op.data;
+                const sentence = op.data as import('../types').SavedSentence;
                 const { data, error } = await supabase.from('saved_sentences').insert({
                     user_id: userId,
                     sentence: sentence.sentence,
@@ -115,9 +115,9 @@ async function processSentenceOperations(userId: string): Promise<{ synced: numb
                 await removePendingSentenceOperation(op.id);
                 synced++;
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             failed++;
-            errors.push(`Sentence op ${op.type}: ${error.message || 'Unknown error'}`);
+            errors.push(`Sentence op ${op.type}: ${error instanceof Error ? error.message : String(error)}`);
             console.error(`Failed to sync sentence operation:`, op, error);
         }
     }
@@ -145,12 +145,12 @@ export async function syncPendingOperations(userId: string): Promise<SyncResult>
             failed: totalFailed,
             errors: allErrors
         };
-    } catch (error: any) {
+    } catch (error: unknown) {
         return {
             success: false,
             synced: 0,
             failed: 0,
-            errors: [error.message || 'Sync failed']
+            errors: [error instanceof Error ? error.message : 'Sync failed']
         };
     }
 }
