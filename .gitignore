@@ -13,11 +13,14 @@ dist/
 .DS_Store
 *.pem
 
+# Binaries
+*.dmg
+
+# Lock files (project uses Bun/bun.lock)
+package-lock.json
+
 # IDEs and editors
-.vscode/*
-!.vscode/extensions.json
-!.vscode/launch.json
-!.vscode/tasks.json
+.vscode/
 .idea/
 *.suo
 *.ntvs*

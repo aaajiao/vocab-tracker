@@ -1,502 +1,105 @@
-# Vocab Tracker (词汇本)
+# Vocab Tracker
 
-[English](#english) | [中文](#chinese)
-
----
-
-<a name="english"></a>
-## 🇬🇧 English
-
-A multi-language vocabulary learning application powered by AI, supporting English and German. Enter a word, and AI automatically generates Chinese translations, contextual examples, and provides high-quality voice pronunciation.
+A multi-language vocabulary learning app powered by AI. Enter a word and get Chinese translations, contextual examples, etymology analysis, and natural voice pronunciation — all generated automatically.
 
 ![React](https://img.shields.io/badge/React-19.0-61DAFB?logo=react)
 ![Vite](https://img.shields.io/badge/Vite-7.3-646CFF?logo=vite)
 ![Tailwind](https://img.shields.io/badge/Tailwind_CSS-4.0-38B2AC?logo=tailwind-css)
-![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4o--mini-412991?logo=openai)
+![OpenAI](https://img.shields.io/badge/OpenAI-GPT--5--mini-412991?logo=openai)
 
-### ✨ Features
+## Features
 
-- **🌓 Dark Mode**: Manual toggle for Light/Dark themes with persistence.
-- **⚡ Performance**: Implemented window-level virtual scrolling for smooth handling of large vocabulary lists.
-- **🤖 AI Translation**: Automatically generates accurate Chinese translations using OpenAI GPT-4o-mini.
-- **📝 Contextual Examples**: Generates matching sentences based on word nature (Daily/Professional/Formal).
-- **📖 Etymology Support**: Analyzes word origins (Latin, Greek, etc.) to help deepen understanding. Collapsible UI keeps the interface clean.
-- **✨ Combined Sentence Creation**: Randomly selects multiple saved words and AI generates a sentence containing them to reinforce memory.
-- **📍 Scene Tags**: Automatically tags sentences with applicable scenes (e.g., Daily Conversation, Workplace).
-- **⭐ Saved Sentences**: Save your favorite examples and combined sentences, synced to the cloud.
-- **🔊 High-Quality Audio**: Natural voice pronunciation using OpenAI TTS with visual feedback indicators.
-- **🇬🇧🇩🇪 Bilingual Support**: Supports both English and German vocabulary.
-- **📊 Statistics**: Real-time display of total vocabulary, count by language, and daily additions.
-- **🔍 Quick Search**: Search by word or translation.
-- **📅 Date Grouping**: Vocabulary automatically grouped by addition date.
-- **📤 CSV Export**: Support for exporting vocabulary data.
-- **☁️ Cloud Sync**: Uses Supabase for storage, ensuring data sync across devices.
-- **📱 PWA Ready**: Supports dark/light mode Apple Touch Icons for home screen installation.
-- **📴 Offline Support**: Full offline access with Service Worker caching and IndexedDB data storage. Add/delete words offline and auto-sync when back online.
+- **AI Translation** — Automatic Chinese translations via OpenAI GPT-5-mini
+- **Contextual Examples** — Sentences generated based on word context (Daily / Professional / Formal)
+- **Etymology Analysis** — Word origin breakdowns (Latin, Greek, etc.) with collapsible UI
+- **Combined Sentences** — AI creates sentences using multiple saved words to reinforce memory
+- **Scene Tags** — Sentences auto-tagged with applicable scenes (Daily Conversation, Workplace, etc.)
+- **High-Quality TTS** — Natural pronunciation via OpenAI TTS with visual feedback
+- **Bilingual Support** — English and German vocabulary
+- **Saved Sentences** — Bookmark favorite examples and combined sentences, synced to cloud
+- **Dark Mode** — Manual light/dark toggle with persistence
+- **Virtual Scrolling** — Smooth performance for large vocabulary lists
+- **Statistics** — Real-time vocabulary count by language and daily additions
+- **Search** — Filter by word or translation
+- **Date Grouping** — Vocabulary organized by addition date
+- **CSV Export** — Export vocabulary data
+- **Cloud Sync** — Supabase backend for cross-device sync
+- **PWA + Offline** — Full offline access via Service Worker + IndexedDB; offline edits auto-sync when back online
 
-### 🚀 Quick Start
+## Quick Start
 
-#### Prerequisites
+### Prerequisites
 
-- Node.js 19+ (or Bun 1.0+)
-- npm, pnpm, or bun
-- **OpenAI API Key (Required)**: [Get it here](https://platform.openai.com/api-keys)
-  > ⚠️ **Note**: Without an OpenAI API Key, the AI translation, example generation, and TTS features will not function. The app will prompt you for the key upon launch.
+- [Bun](https://bun.sh/) 1.0+ (recommended) or Node.js 19+
+- [OpenAI API Key](https://platform.openai.com/api-keys) (required for AI features)
 
-#### Installation
+### Install & Run
 
 ```bash
-# Clone repository
-git clone <repository-url>
+git clone https://github.com/aaajiao/vocab-tracker.git
 cd vocab-tracker
-
-# Install dependencies (choose one)
-npm install   # Standard Node.js
-bun install   # If using Bun runtime
+bun install
 ```
 
-#### Configure Environment Variables
-
-Create a `.env` file (copy from `.env.example`):
+Create a `.env` file:
 
 ```env
-# Required: Supabase connection
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
 
-# Optional: Can also be set in app settings
+# Optional — can also be set in the app settings UI
 VITE_OPENAI_API_KEY=sk-proj-xxxxx
 ```
 
-> **Tip**: You can also enter the OpenAI API Key directly in the app settings (⚙️ icon).
-
-#### Start Development Server
-
 ```bash
-# Standard Node.js
-npm run dev
-
-# Or using Bun (faster)
 bun run dev
 ```
 
 Visit http://localhost:5173
 
-#### Running in Docker / OrbStack
+## macOS App
 
-When running in a Docker container (e.g., OrbStack environment):
+Download **VocabTracker.dmg** from the [Releases](https://github.com/aaajiao/vocab-tracker/releases) page.
 
-```bash
-# Start the dev server in background
-nohup bun run dev > server.log 2>&1 &
+## Deployment (Vercel)
 
-# Access via OrbStack magic domain
-# http://opencode.orb.local:5173/
-```
+Push to your Git repository. Vercel will auto-detect Vite and deploy. Configure these environment variables in the Vercel dashboard:
 
-> **Note**: The `vite.config.js` has been configured with `allowedHosts` to permit access from the OrbStack domain.
-
-#### Deploying to Vercel
-
-Simply push to your Git repository. Vercel will automatically:
-1. Detect the Vite framework
-2. Run `npm install` and `vite build`
-3. Deploy the static files
-
-Make sure to configure environment variables in Vercel dashboard:
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
-### 📁 Project Structure
-
-```
-vocab-tracker/
-├── src/
-│   ├── App.tsx              # Main Application Component
-│   ├── main.tsx             # Entry Point
-│   ├── index.css            # Stylesheet
-│   ├── constants.ts         # App Constants
-│   ├── types.ts             # TypeScript Types
-│   ├── supabaseClient.ts    # Supabase Client
-│   ├── components/          # UI Components
-│   │   ├── AuthForm.tsx
-│   │   ├── ErrorBoundary.tsx
-│   │   ├── Icons.tsx
-│   │   ├── SettingsPanel.tsx
-│   │   ├── Skeleton.tsx
-│   │   ├── SwipeableCard.tsx
-│   │   ├── SwipeableSentenceCard.tsx
-│   │   ├── ToastContainer.tsx
-│   │   ├── UndoToast.tsx
-│   │   └── VirtualWordList.tsx
-│   ├── hooks/               # Custom React Hooks
-│   │   ├── useAuth.ts
-│   │   ├── useDebounce.ts
-│   │   ├── useNetworkStatus.ts
-│   │   ├── useSentences.ts
-│   │   ├── useTheme.ts
-│   │   ├── useToast.ts
-│   │   ├── useUndo.ts
-│   │   └── useWords.ts
-│   └── services/            # API Services
-│       ├── audioCache.ts
-│       ├── openai.ts
-│       ├── sentencesCache.ts
-│       ├── syncQueue.ts
-│       ├── tts.ts
-│       └── wordsCache.ts
-├── .vscode/                 # VS Code Config
-├── index.html               # HTML Template
-├── vite.config.js           # Vite Config
-├── package.json             # Dependencies
-└── .env                     # Environment Variables
-```
-
-### 🔧 Tech Stack
+## Tech Stack
 
 - **Frontend**: React 19, Vite 7, Tailwind CSS 4
-- **Backend/Storage**: Supabase
-- **AI Services**: OpenAI GPT-4o-mini (Translation), GPT-4o-mini-tts (Audio)
+- **Backend / Storage**: Supabase (Auth + Postgres)
+- **AI**: OpenAI GPT-5-mini (translation & examples), OpenAI TTS (audio)
+- **Runtime**: Bun
 
-### 🎨 Usage Guide
-
-1.  **Add Word**: Click "Add", select language, enter word. AI generates content. Click "Save".
-2.  **Play Audio**: Click any word to play pronunciation.
-3.  **Make Sentence**: Review "English" or "German" tabs, click "✨ Combined Sentence" to generate a sentence from random words.
-4.  **Favorites**: Save sentences to the "⭐ Favorites" tab.
-
-### 🌐 Supabase Configuration
-
-This project requires a Supabase backend. Please refer to [SUPABASE_SETUP.md](./SUPABASE_SETUP.md) for detailed setup instructions.
-
-### � Release Checklist
-
-> **Reminder**: Don't forget to update version numbers!
-
-Run this command to update both `package.json` and `package-lock.json`:
-
-```bash
-npm version <new-version>  # e.g., npm version 1.5.1
-```
-
-### 📝 Changelog
-
-#### v1.6.0 (2026-01-03)
-- 📴 **PWA Offline Support**: Full offline capability with Service Worker and IndexedDB.
-  - Service Worker caches all static assets (JS, CSS, HTML, fonts) for offline app access.
-  - IndexedDB caches vocabulary and sentence data locally.
-  - Offline add/delete operations are queued and auto-synced when back online.
-  - Network status indicators show offline mode and pending sync count.
-  - Settings panel now displays data cache statistics with clear options.
-  - Added offline fallback page for complete network failures.
-- ✨ **Vocabulary Expansion**: Generate related words from existing vocabulary for contextual learning.
-- 🔤 **Multi-meaning Words**: AI generates multiple common meanings for polysemous words (e.g., "单位; 统一; 团结" for "einheit").
-- 🐛 **Bug Fix**: Fixed blank rendering issue when batch adding words via vocabulary expansion.
-
-#### v1.5.1 (2025-12-22)
-- ♻️ **Code Refactoring**: Eliminated code duplication in OpenAI service.
-  - Extracted common API call logic into a unified `callOpenAI` wrapper function.
-  - Added utility functions for language name conversion and JSON parsing.
-  - Reduced code complexity and improved maintainability.
-
-#### v1.5.0 (2025-12-21)
-- ✨ **New Feature (AI)**: Added **Etymology Support**.
-  - Analyzes word origins (e.g., Latin, Greek roots).
-  - Collapsible "📖 Etymology" section in word cards.
-  - Supports both English and German words.
-- 💄 **UI Improvements**: Improved word card layout with collapsible sections.
-
-#### v1.4.4 (2025-12-21)
-- **🔊 Persistent Audio Cache**: TTS audio cached in IndexedDB for offline playback across sessions.
-- **📊 Cache Management**: Settings panel shows cache stats (count + size) with clear button.
-- **🗑️ Auto Cache Cleanup**: Deleting a word/sentence also removes its cached audio.
-
-#### v1.4.3 (2025-12-21)
-- **📦 Constants Extraction**: Centralized magic values (timing, categories, storage keys) into `constants.ts`.
-- **💀 Skeleton Loading**: Professional loading screen with animated placeholders instead of "Loading..." text.
-
-#### v1.4.2 (2025-12-21)
-- **↩️ Unified Undo System**: Combined word and sentence undo into a single `useUndo` hook + generic `UndoToast`.
-- **✨ Sentence Undo**: Now can undo when removing saved sentences.
-
-#### v1.4.1 (2025-12-21)
-- **📱 Swipe Delete for Saved Sentences**: Mobile users can now swipe to remove saved sentences.
-- **🖱️ Smart Device Detection**: Uses hover capability detection instead of screen width for desktop/mobile UI.
-
-#### v1.4.0 (2025-12-21)
-- **🪝 Custom Hooks**: Extracted `useAuth`, `useWords`, `useSentences`, `useDebounce`, `useToast` for cleaner code.
-- **🔍 Search Debounce**: Added 300ms delay for smoother search experience.
-- **📣 Toast Notifications**: Success/error/info feedback for all operations.
-
-#### v1.3.0 (2025-12-20)
-- **📝 TypeScript Migration**: Full codebase migration to TypeScript for better type safety and IDE support.
-- **📦 Type Definitions**: Added comprehensive type definitions for all components and services.
-
-#### v1.2.0 (2025-12-20)
-- **🏗️ Code Refactoring**: Modularized codebase into components, services, and hooks.
-- **⚡ Performance**: Added `React.memo`, `useCallback`, and `useMemo` optimizations.
-- **↩️ Undo Delete**: Added 5-second undo toast for accidental deletions.
-- **🛡️ Error Boundary**: Added graceful error handling with recovery option.
-- **🌓 Theme Persistence**: User theme choice now persists across sessions.
-
-#### v1.1.0 (2025-12-20)
-- **🌓 Dark Mode**: Added manual theme toggle with persistent storage.
-- **⚡ Virtual Scrolling**: Implemented window-level virtualization for improved performance.
-- **🎨 UI/UX Enhancements**: Added visual indicators for audio generation and updated brand assets.
-- **📱 PWA Optimization**: Added adaptive Apple Touch Icons for Dark Mode.
-
-#### v1.0.0 (2025-12-20)
-- **Initial Release**: Complete vocabulary tracking features.
-- **Multi-language**: English and German support.
-- **AI Integration**: Translation, example generation, and TTS.
-- **Cloud Sync**: Supabase integration.
-- **Documentation**: Bilingual README and Setup Guide.
-
----
-
-<a name="chinese"></a>
-## 🇨🇳 中文
-
-一个基于 AI 的多语言词汇学习应用，支持英语和德语。输入单词后，AI 自动生成中文翻译、情境例句，并提供高质量语音朗读。
-
-### ✨ 功能特性
-
-- **🌓 深色模式**：手动切换浅色/深色主题，支持状态持久化存储
-- **⚡ 性能优化**：实现窗口级虚拟滚动，流畅处理海量词汇列表
-- **🤖 AI 智能翻译**：使用 OpenAI GPT-4o-mini 自动生成准确的中文翻译
-- **📝 情境例句**：根据词汇性质（日常/专业/正式）生成匹配的例句
-- **📖 词源解析**：分析单词起源（拉丁语、希腊语等）帮助加深理解，可折叠 UI 保持界面整洁
-- **✨ 组合造句**：随机选取多个已记录的单词，AI 生成包含这些单词的句子，加深记忆
-- **📍 场景标签**：根据单词类别自动标注句子适用场景（日常对话/职场交流等）
-- **⭐ 句子收藏**：收藏喜欢的例句和组合造句，云端同步
-- **🔊 高质量语音**：使用 OpenAI TTS 提供自然的语音朗读，并带有视觉状态反馈
-- **🇬🇧🇩🇪 双语支持**：同时支持英语和德语词汇
-- **📊 学习统计**：实时显示总词汇量、各语言数量和今日新增
-- **🔍 快速搜索**：支持按单词或翻译搜索
-- **📅 按日期分组**：词汇按添加日期自动分组显示
-- **📤 CSV 导出**：支持导出词汇数据
-- **☁️ 云端同步**：使用 Supabase 存储，跨设备同步数据
-- **📱 PWA 支持**：适配 iOS 主屏幕深浅色模式图标
-- **📴 离线支持**：完整离线访问能力，使用 Service Worker 缓存静态资源，IndexedDB 存储数据。支持离线添加/删除单词，恢复网络后自动同步
-
-### 🚀 快速开始
-
-#### 前提条件
-
-- Node.js 19+（或 Bun 1.0+）
-- npm、pnpm 或 bun
-- **OpenAI API Key（必需）**：[获取地址](https://platform.openai.com/api-keys)
-  > ⚠️ **注意**：没有 OpenAI API Key 将无法使用本项目的 AI 翻译、例句生成和语音朗读功能。应用启动后会提示您输入 API Key。
-
-#### 安装
-
-```bash
-# 克隆项目
-git clone <repository-url>
-cd vocab-tracker
-
-# 安装依赖（选择其一）
-npm install   # 标准 Node.js
-bun install   # 如果使用 Bun 运行时
-```
-
-#### 配置环境变量
-
-创建 `.env` 文件（可从 `.env.example` 复制）：
-
-```env
-# 必需：Supabase 连接配置
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
-
-# 可选：也可以在应用内设置
-VITE_OPENAI_API_KEY=sk-proj-xxxxx
-```
-
-> **提示**：OpenAI API Key 也可以在应用设置中直接输入（点击 ⚙️ 图标）。
-
-#### 启动开发服务器
-
-```bash
-# 标准 Node.js
-npm run dev
-
-# 或使用 Bun（更快）
-bun run dev
-```
-
-访问 http://localhost:5173
-
-#### 在 Docker / OrbStack 中运行
-
-在 Docker 容器（如 OrbStack 环境）中运行时：
-
-```bash
-# 后台启动开发服务器
-nohup bun run dev > server.log 2>&1 &
-
-# 通过 OrbStack 魔法域名访问
-# http://opencode.orb.local:5173/
-```
-
-> **说明**：`vite.config.js` 已配置 `allowedHosts`，允许从 OrbStack 域名访问。
-
-#### 部署到 Vercel
-
-只需推送到 Git 仓库，Vercel 会自动：
-1. 检测 Vite 框架
-2. 执行 `npm install` 和 `vite build`
-3. 部署静态文件
-
-请确保在 Vercel 控制台配置环境变量：
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
-
-### 📁 项目结构
+## Project Structure
 
 ```
-vocab-tracker/
-├── src/
-│   ├── App.tsx              # 主应用组件
-│   ├── main.tsx             # 入口文件
-│   ├── index.css            # 样式表
-│   ├── constants.ts         # 常量定义
-│   ├── types.ts             # TypeScript 类型
-│   ├── supabaseClient.ts    # Supabase 客户端
-│   ├── components/          # UI 组件
-│   │   ├── AuthForm.tsx
-│   │   ├── ErrorBoundary.tsx
-│   │   ├── Icons.tsx
-│   │   ├── SettingsPanel.tsx
-│   │   ├── Skeleton.tsx
-│   │   ├── SwipeableCard.tsx
-│   │   ├── SwipeableSentenceCard.tsx
-│   │   ├── ToastContainer.tsx
-│   │   ├── UndoToast.tsx
-│   │   └── VirtualWordList.tsx
-│   ├── hooks/               # 自定义 Hooks
-│   │   ├── useAuth.ts
-│   │   ├── useDebounce.ts
-│   │   ├── useNetworkStatus.ts
-│   │   ├── useSentences.ts
-│   │   ├── useTheme.ts
-│   │   ├── useToast.ts
-│   │   ├── useUndo.ts
-│   │   └── useWords.ts
-│   └── services/            # API 服务
-│       ├── audioCache.ts
-│       ├── openai.ts
-│       ├── sentencesCache.ts
-│       ├── syncQueue.ts
-│       ├── tts.ts
-│       └── wordsCache.ts
-├── .vscode/                 # VS Code 配置
-├── index.html               # HTML 模板
-├── vite.config.js           # Vite 配置
-├── package.json             # 项目依赖
-└── .env                     # 环境变量
+src/
+├── App.tsx              # Main application component
+├── main.tsx             # Entry point
+├── index.css            # Global styles + Tailwind
+├── types.ts             # Shared TypeScript interfaces
+├── constants.ts         # App-wide constants
+├── supabaseClient.ts    # Supabase client
+├── components/          # UI components
+├── hooks/               # Custom React hooks
+└── services/            # API integrations (OpenAI, TTS, caching)
 ```
 
-### 🔧 技术架构
+Other top-level files: `CLAUDE.md` (agent dev guide), `SUPABASE_SETUP.md`, `vite.config.js`, `package.json`, `bun.lock`.
 
-- **前端**: React 19, Vite 7, Tailwind CSS 4
-- **后端/存储**: Supabase
-- **AI 服务**: OpenAI GPT-4o-mini (翻译), GPT-4o-mini-tts (语音)
+## Supabase Setup
 
-### 🎨 使用指南
+See [SUPABASE_SETUP.md](./SUPABASE_SETUP.md) for database schema and configuration.
 
-1.  **添加单词**: 点击 "添加", 选择语言, 输入单词. AI 自动生成内容. 点击 "保存".
-2.  **播放语音**: 点击任意单词播放读音.
-3.  **组合造句**: 在 "英语" 或 "德语" 标签页下, 点击 "✨ 组合造句" 生成包含随机单词的句子.
-4.  **收藏**: 将喜欢的句子保存到 "⭐ 收藏" 列表.
+## Changelog
 
-### 🌐 Supabase 配置
+See [CHANGELOG.md](./CHANGELOG.md).
 
-本项目需要 Supabase 后端支持。详细设置请参阅 [SUPABASE_SETUP.md](./SUPABASE_SETUP.md)。
-
-### 📦 发布/更新检查清单 (Release Checklist)
-
-> **🔔 提醒**：每次更新功能后，请记得更新版本号！
-
-运行以下命令可自动更新 `package.json` 和 `package-lock.json`：
-
-```bash
-npm version <新版本号>  # 例如: npm version 1.5.1
-```
-
-### 📝 更新日志 (Changelog)
-
-#### v1.6.0 (2026-01-03)
-- 📴 **PWA 离线支持**：完整的离线功能，使用 Service Worker 和 IndexedDB
-  - Service Worker 缓存所有静态资源（JS、CSS、HTML、字体），支持离线打开应用
-  - IndexedDB 本地缓存词汇和句子数据
-  - 离线添加/删除操作会排队，恢复网络后自动同步
-  - 网络状态指示器显示离线模式和待同步数量
-  - 设置面板新增数据缓存统计和清除选项
-  - 添加离线回退页面应对完全无网络情况
-- ✨ **词汇拓展**：从现有单词生成相关词汇，进行上下文学习
-- 🔤 **多义词支持**：AI 为多义词生成多个常见含义，用分号分隔（如 "einheit" → "单位; 统一; 团结"）
-- 🐛 **Bug 修复**：修复了通过词汇拓展批量添加单词时的空白渲染问题
-
-#### v1.5.1 (2025-12-22)
-- ♻️ **代码重构**：消除 OpenAI 服务中的代码重复
-  - 提取通用 API 调用逻辑到统一的 `callOpenAI` 封装函数
-  - 新增语言名称转换和 JSON 解析工具函数
-  - 降低代码复杂度，提升可维护性
-
-#### v1.5.0 (2025-12-21)
-- ✨ **新功能 (AI)**：新增 **Etymology (词源解析)** 支持
-  - 自动分析单词起源（如拉丁语、希腊语词根）
-  - 单词卡片增加可折叠的 "📖 词源" 部分
-  - 同时也支持德语单词的词源解析
-- 💄 **UI 优化**：调整卡片布局，支持内容折叠
-
-#### v1.4.4 (2025-12-21)
-- **🔊 持久化音频缓存**: TTS 音频缓存到 IndexedDB，支持跨会话离线播放。
-- **📊 缓存管理**: 设置面板显示缓存统计（数量 + 大小）和清除按钮。
-- **🗑️ 自动清理缓存**: 删除单词/句子时也会删除对应的音频缓存。
-
-#### v1.4.3 (2025-12-21)
-- **📦 常量提取**: 将魔法值（时间、分类、存储键）集中到 `constants.ts`。
-- **💀 骨架屏加载**: 加载时显示动画占位符，替代简单的 "Loading..." 文本。
-
-#### v1.4.2 (2025-12-21)
-- **↩️ 统一撤销系统**: 将单词和句子的撤销合并为单一的 `useUndo` Hook + 通用 `UndoToast`。
-- **✨ 句子撤销**: 移除收藏句子时现在可以撤销。
-
-#### v1.4.1 (2025-12-21)
-- **📱 收藏句子滑动删除**: 移动端用户可以滑动删除收藏的句子。
-- **🖱️ 智能设备检测**: 使用鼠标悬停能力检测而非屏幕宽度来区分桌面/移动端 UI。
-
-#### v1.4.0 (2025-12-21)
-- **🪝 Custom Hooks**: 提取 `useAuth`、`useWords`、`useSentences`、`useDebounce`、`useToast`，代码更清晰。
-- **🔍 搜索防抖**: 添加 300ms 延迟，搜索体验更流畅。
-- **📣 Toast 通知**: 所有操作提供成功/错误/信息反馈。
-
-#### v1.3.0 (2025-12-20)
-- **📝 TypeScript 迁移**: 全面迁移至 TypeScript，获得更好的类型安全和 IDE 支持。
-- **📦 类型定义**: 为所有组件和服务添加完整类型定义。
-
-#### v1.2.0 (2025-12-20)
-- **🏗️ 代码重构**: 模块化拆分代码为组件、服务和 Hooks，提升可维护性。
-- **⚡ 性能优化**: 添加 `React.memo`、`useCallback`、`useMemo` 优化。
-- **↩️ 撤销删除**: 误删单词后 5 秒内可撤销恢复。
-- **🛡️ 错误边界**: 添加优雅的错误处理和恢复机制。
-- **🌓 主题持久化**: 用户的主题选择现在会跨会话保存。
-
-#### v1.1.0 (2025-12-20)
-- **🌓 深色模式**: 添加手动主题切换，支持持久化存储。
-- **⚡ 虚拟滚动**: 实现窗口级虚拟滚动，大幅提升长列表性能。
-- **🎨 UI/UX 优化**: 增加语音状态反馈动画，优化界面细节。
-- **📱 PWA 优化**: 添加适配深色模式的 Apple Touch Icon。
-
-#### v1.0.0 (2025-12-20)
-- **首次发布**: 完整的词汇记录功能.
-- **多语言支持**: 支持英语和德语.
-- **AI 集成**: 翻译, 例句生成, 语音朗读.
-- **云端同步**: Supabase 数据同步.
-- **文档**: 双语 README 和 设置指南.
-
-## 📄 License
+## License
 
 MIT
