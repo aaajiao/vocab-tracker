@@ -9,7 +9,7 @@ export interface ExpansionResponse {
 
 // Constants
 const OPENAI_API_ENDPOINT = "/api/openai/v1/chat/completions";
-const DEFAULT_MODEL = "gpt-4o-mini";
+const DEFAULT_MODEL = "gpt-5-mini";
 
 // Types for internal use
 interface OpenAIMessage {
