@@ -1,198 +1,107 @@
-# Vocab Tracker - Agent Development Guide
+# CLAUDE.md
 
-## Quick Reference
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Commands
 
 | Action | Command |
 |--------|---------|
-| **Dev Server** | `bun run dev` |
-| **Build** | `bun run build` |
-| **Type Check** | `bun x tsc` |
-| **Preview Build** | `bun run preview` |
+| Dev Server | `bun run dev` (http://localhost:5173) |
+| Build | `bun run build` |
+| Type Check | `bun x tsc` |
+| Preview Build | `bun run preview` |
 
-> **Runtime**: Bun (Node.js is NOT installed). Use `bun` instead of `npm`.
+**Runtime**: Bun only (Node.js is NOT installed). Use `bun` instead of `npm`/`npx`.
 
-## Build & Verification
+**Pre-commit**: Run `bun x tsc` (zero errors) and `bun run build` (must succeed). No automated tests — verify UI manually.
 
-### Commands
-```bash
-bun run dev       # Start dev server at http://localhost:5173
-bun run build     # Production build to dist/
-bun x tsc         # Type check only (no emit)
-bun run preview   # Preview production build
-```
+No ESLint or Prettier configured. Follow existing code patterns.
 
-### Pre-commit Checklist
-1. Run `bun x tsc` - must have zero errors
-2. Run `bun run build` - must complete successfully
-3. Manual UI verification (no automated tests)
+## Architecture
 
-### No Linting/Formatting Tools
-- No ESLint or Prettier configured
-- Rely on TypeScript strict mode for correctness
-- Follow existing code patterns for consistency
+AI-powered vocabulary learning PWA for Chinese speakers. Users enter English/German words and get Chinese translations, example sentences, etymology, and TTS pronunciation — all via OpenAI.
 
-## Project Structure
+**Tech stack**: React 19, Vite 7, Tailwind CSS 4, Supabase (auth + Postgres), OpenAI GPT-5-mini, Bun.
 
-```
-src/
-├── App.tsx              # Main application (~57k LOC, contains most UI logic)
-├── main.tsx             # Entry point
-├── index.css            # Global styles + Tailwind
-├── types.ts             # Shared TypeScript interfaces
-├── constants.ts         # App-wide constants (timing, categories, keys)
-├── supabaseClient.ts    # Supabase initialization
-├── components/          # Reusable UI components
-├── hooks/               # Custom React hooks (useAuth, useWords, etc.)
-└── services/            # API integrations (OpenAI, TTS, caching)
-```
+### App Structure
 
-## Code Style & Conventions
+`App.tsx` (~1000 lines) is the main orchestrator. It composes hooks for business logic and renders the full UI. All state lives here — hooks handle the async/caching complexity.
 
-### TypeScript
-- **Strict mode enabled** - avoid `any` where possible
-- Shared types go in `types.ts`; local types can be defined in-file
-- Prefer type inference for simple values: `useState(false)` not `useState<boolean>(false)`
-- Export interfaces for component props
+**Hooks layer** (each hook encapsulates one domain):
+- `useWords` — Core word CRUD. Cache-first loading (IndexedDB → Supabase). Offline writes with sync. Filters, date grouping, stats.
+- `useSentences` — Saved sentence management. Same cache-first + offline pattern as useWords.
+- `useAuth` — Supabase auth state, password recovery.
+- `useNetworkStatus` — Online/offline detection, pending sync count, auto-sync triggers (on reconnect + every 30s).
+- `useTheme` — Dark/light mode with localStorage persistence.
+- `useToast` / `useUndo` — Notification and undo-delete state.
 
-### React Components
-```typescript
-// Use function declaration syntax
-function ComponentName({ prop1, prop2 }: Props) {
-    // ... component logic
-}
+**Services layer**:
+- `openai.ts` — All AI calls go through `callOpenAI<T>()`. Returns typed result or `null`. Cleans markdown code blocks from JSON responses before parsing.
+- `tts.ts` — 4-tier TTS fallback: session cache → IndexedDB → OpenAI API (3 retries) → browser SpeechSynthesis. Uses `gpt-4o-mini-tts` model.
+- `wordsCache.ts` / `sentencesCache.ts` — IndexedDB stores with `syncStatus` tracking ('synced', 'pending_add', 'pending_delete').
+- `audioCache.ts` — IndexedDB for TTS audio blobs. Key format: `{language}_{text}`.
+- `syncQueue.ts` — Processes pending offline operations against Supabase. Replaces temporary IDs (`temp_{timestamp}_{random}`) with server-assigned UUIDs on sync.
 
-export default memo(ComponentName);  // Wrap with memo for performance
-```
+**Key components**:
+- `VirtualWordList` — Window-based virtual scrolling via @tanstack/react-virtual. Critical for performance with large word lists.
+- `SwipeableCard` / `SwipeableSentenceCard` — Touch swipe-to-delete (mobile) + hover delete button (desktop). Threshold: -60px.
+- `SettingsPanel` — API key input, cache stats, clear cache.
+- `Icons` — SVG icon collection. Speaker icon is state-aware (playing/cached indicators).
 
-- **Functional components only** - no class components
-- Use `React.memo`, `useMemo`, `useCallback` proactively
-- Custom hooks for reusable logic (see `src/hooks/`)
+### Offline/PWA Data Flow
 
-### Import Order
-```typescript
-import { useState, useEffect, memo } from 'react';    // 1. React
-import type { Word, SavedSentence } from '../types';  // 2. Types
-import { Icons } from './Icons';                       // 3. Components
-import { STORAGE_KEYS, CATEGORIES } from '../constants'; // 4. Constants
-import { getAIContent } from '../services/openai';    // 5. Services
-import { useAuth } from '../hooks/useAuth';           // 6. Hooks
-```
+Cache-first architecture: always load from IndexedDB first (instant UI), then refresh from Supabase.
 
-### Naming Conventions
-| Type | Convention | Example |
-|------|------------|---------|
-| Components | PascalCase | `VirtualWordList.tsx` |
-| Hooks | camelCase with `use` prefix | `useAuth.ts` |
-| Services | camelCase | `openai.ts` |
-| Constants | UPPER_SNAKE_CASE | `STORAGE_KEYS` |
-| Functions | camelCase | `getAIContent` |
-| Interfaces | PascalCase | `SwipeableCardProps` |
+When offline: operations write to IndexedDB with `pending_add`/`pending_delete` status. When online again, `useNetworkStatus` detects the `online` event and triggers `syncQueue.syncPendingOperations()`, which pushes pending ops to Supabase, replaces temp IDs with server IDs, and clears the pending queue.
+
+Service worker is auto-generated by `vite-plugin-pwa` (Workbox). It handles static asset caching; data sync is entirely manual via the hooks + syncQueue.
+
+### API Proxy
+
+Dev server proxies `/api/openai` → `https://api.openai.com` (configured in `vite.config.js`). Production uses Vercel rewrites.
+
+### Supabase Schema
+
+Two tables with Row Level Security (user can only access own data):
+- `words` — id, user_id, word, meaning, language ('en'|'de'), example, example_cn, category, date, etymology. Unique constraint: (user_id, word, language).
+- `saved_sentences` — id, user_id, sentence, sentence_cn, language, scene, source_type ('word'|'combined'), source_words (JSONB array).
+
+Full schema in `SUPABASE_SETUP.md`.
+
+## Code Conventions
 
 ### Language & Localization
-- **Code**: English (variables, functions, comments in code logic)
-- **UI Text & User-facing Comments**: Chinese (Simplified) - the app targets Chinese speakers
-- **Example**: `// 获取初始会话` for comments, but `getSession()` for function names
+- **Code identifiers**: English (`getSession`, `deleteWord`)
+- **UI text & code comments**: Chinese Simplified (`// 获取初始会话`, `"已保存"`)
 
-## Styling (Tailwind CSS v4)
+### React Patterns
+- Function declaration syntax for components, exported with `memo()`
+- `useMemo`, `useCallback` used proactively for performance
+- State treated as immutable
 
-### Usage
-- Utility classes directly in `className`
-- Dark mode: use `dark:` prefix for all color-dependent classes
-- Responsive: use `sm:`, `md:`, `lg:` prefixes
+### Import Order
+React → Types → Components → Constants → Services → Hooks
 
-```tsx
-<div className="bg-white dark:bg-slate-800 p-4 sm:p-6 rounded-xl">
-```
+### Styling (Tailwind v4)
+- Dark mode via `dark:` prefix on all color-dependent classes
+- Device detection via CSS capability queries, NOT screen width:
+  - `.hover-device-show` / `.hover-device-hide` — mouse/trackpad
+  - `.touch-device-show` / `.touch-device-hide` — touch devices
+- Custom animations in `index.css`: `.animate-pulse-ring`, `.animate-slide-up`, `.animate-slide-in`
 
-### Custom Animations
-Defined in `index.css`:
-- `.animate-pulse-ring` - for playing audio state
-- `.animate-slide-up` - for undo toast
-- `.animate-slide-in` - for notifications
+### TypeScript
+- Strict mode enabled. Avoid `any`.
+- Shared types in `types.ts`. Key types: `Word`, `SavedSentence`, `AIContent`, `DetectedContent`.
+- Constants in `constants.ts`: timing values (`DEBOUNCE_DELAY`, `UNDO_DURATION`), language configs, category configs with Tailwind styles, `STORAGE_KEYS`, `TABS`.
 
-### Device Detection (CSS)
-Use capability-based detection, NOT screen width:
-- `.hover-device-show` / `.hover-device-hide` - for mouse/trackpad devices
-- `.touch-device-show` / `.touch-device-hide` - for touch devices
+## Environment
 
-## API & Services
-
-### Error Handling Pattern
-```typescript
-async function apiCall(): Promise<Result | null> {
-    try {
-        const response = await fetch(...);
-        const data = await response.json();
-        if (data.error) {
-            console.error('API Error:', data.error);
-            return null;
-        }
-        return parseResponse(data);
-    } catch (e) {
-        console.error('Request failed:', e);
-        return null;
-    }
-}
-```
-
-### OpenAI Integration (`services/openai.ts`)
-- All AI calls go through `callOpenAI<T>()` wrapper
-- JSON responses cleaned of markdown code blocks before parsing
-- Returns `null` on failure, typed result on success
-
-### Supabase (`supabaseClient.ts`)
-- Auth and data persistence
-- Environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
-
-### Caching Services
-- `audioCache.ts` - IndexedDB for TTS audio
-- `wordsCache.ts` - IndexedDB for offline word storage
-- `sentencesCache.ts` - IndexedDB for offline sentences
-- `syncQueue.ts` - Queues offline operations for sync
-
-## Important Rules
-
-### DO
-- Treat state as immutable
-- Use environment variables for API keys
-- Support offline/online states (PWA)
-- Use existing Icons component for SVG icons
-- Match existing patterns in similar files
-
-### DON'T
-- Hardcode API keys
-- Use `any` type unless absolutely necessary
-- Ignore TypeScript errors
-- Break offline functionality
-- Add new dependencies without justification
-
-## Environment Setup
-
-### Required `.env` Variables
 ```env
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
-# Optional - can be set in app settings UI
+# Optional — can be set in app settings UI
 VITE_OPENAI_API_KEY=sk-proj-xxxxx
 ```
 
 ### Docker/OrbStack
-```bash
-# Start dev server in background
-nohup bun run dev > server.log 2>&1 &
-
-# Access via OrbStack domain
-# http://opencode.orb.local:5173/
-```
-
-The `vite.config.js` has `allowedHosts: true` for container access.
-
-## Testing & Verification
-
-No automated tests are configured. For changes:
-
-1. **Type Safety**: `bun x tsc` must pass
-2. **Build**: `bun run build` must succeed
-3. **Manual Testing**: Verify UI changes in browser
-4. **Offline Mode**: Test with DevTools Network → Offline
-5. **Dark Mode**: Toggle and verify all color-dependent styles
+Dev server binds to all interfaces (`host: true`) with `allowedHosts: true` in vite config for container access.
