@@ -36,7 +36,7 @@ AI-powered vocabulary learning PWA for Chinese speakers. Users enter English/Ger
 - `useToast` / `useUndo` — Notification and undo-delete state.
 
 **Services layer**:
-- `openai.ts` — All AI calls go through `callOpenAI<T>()`. Returns typed result or `null`. Cleans markdown code blocks from JSON responses before parsing.
+- `openai.ts` — All AI calls go through `callOpenAI<T>()`. Returns typed result or `null`. Cleans markdown code blocks from JSON responses before parsing. Uses `gpt-5-mini` with `max_completion_tokens` (NOT `max_tokens`, which is deprecated) and `reasoning_effort: 'low'` (gpt-5-mini does not support `none` — only gpt-5.1+ does). Token limits are set high (2048–4096) because `max_completion_tokens` covers both reasoning and output tokens.
 - `tts.ts` — 4-tier TTS fallback: session cache → IndexedDB → OpenAI API (3 retries) → browser SpeechSynthesis. Uses `gpt-4o-mini-tts` model.
 - `wordsCache.ts` / `sentencesCache.ts` — IndexedDB stores with `syncStatus` tracking ('synced', 'pending_add', 'pending_delete').
 - `audioCache.ts` — IndexedDB for TTS audio blobs. Key format: `{language}_{text}`.
