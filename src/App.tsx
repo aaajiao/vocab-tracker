@@ -210,7 +210,7 @@ function App() {
         if (!newWord.word.trim() || !newWord.meaning.trim()) return;
 
         await addWord({
-            word: newWord.word.trim(),
+            word: newWord.word.trim().toLowerCase(),
             meaning: newWord.meaning.trim(),
             language: newWord.language,
             example: newWord.example.trim(),
@@ -380,7 +380,7 @@ function App() {
                 skippedWords.push(item.word);
             } else {
                 newWordsToAdd.push({
-                    word: item.word,
+                    word: item.word.toLowerCase(),
                     meaning: item.meaning,
                     language: activeTab as 'en' | 'de',
                     example: item.sentence,
