@@ -59,7 +59,7 @@ async function callOpenAI<T>(
             body: JSON.stringify({
                 model: DEFAULT_MODEL,
                 max_completion_tokens: maxTokens,
-                reasoning_effort: 'none',
+                reasoning_effort: 'low',
                 messages
             })
         });
@@ -108,7 +108,7 @@ Respond in this exact JSON format only, no other text:
             }
         ],
         apiKey,
-        400
+        2048
     );
 }
 
@@ -133,7 +133,7 @@ Respond in this exact JSON format only:
             }
         ],
         apiKey,
-        400
+        2048
     );
 }
 
@@ -158,7 +158,7 @@ Respond in this exact JSON format only:
             }
         ],
         apiKey,
-        200
+        1024
     );
 }
 
@@ -188,7 +188,7 @@ Respond in this exact JSON format only:
             }
         ],
         apiKey,
-        400
+        2048
     );
 }
 
@@ -239,6 +239,6 @@ Respond in this exact JSON format only:
             }
         ],
         apiKey,
-        800
+        4096
     );
 }
