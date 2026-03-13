@@ -9,7 +9,7 @@ export interface ExpansionResponse {
 
 // Constants
 const OPENAI_API_ENDPOINT = "/api/openai/v1/chat/completions";
-const DEFAULT_MODEL = "gpt-5-mini";
+const DEFAULT_MODEL = "gpt-4.1";
 
 // Types for internal use
 interface OpenAIMessage {
@@ -58,8 +58,7 @@ async function callOpenAI<T>(
             },
             body: JSON.stringify({
                 model: DEFAULT_MODEL,
-                max_completion_tokens: maxTokens,
-                reasoning_effort: 'low',
+                max_tokens: maxTokens,
                 messages
             })
         });
