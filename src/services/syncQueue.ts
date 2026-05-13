@@ -7,14 +7,12 @@ import {
     removePendingOperation,
     markWordSynced,
     removeFromCache,
-    type PendingOperation
 } from './wordsCache';
 import {
     getPendingSentenceOperations,
     removePendingSentenceOperation,
     markSentenceSynced,
     removeFromSentenceCache,
-    type PendingSentenceOperation
 } from './sentencesCache';
 
 export interface SyncResult {
@@ -22,6 +20,16 @@ export interface SyncResult {
     synced: number;
     failed: number;
     errors: string[];
+}
+
+// Supabase rejects with plain `{message, code}` objects, not Error instances.
+// Falling back to `String(error)` for those yields "[object Object]" and loses the message.
+function formatError(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    if (error && typeof error === 'object' && 'message' in error) {
+        return String((error as { message: unknown }).message);
+    }
+    return String(error);
 }
 
 // Process all pending word operations
@@ -68,7 +76,7 @@ async function processWordOperations(userId: string): Promise<{ synced: number; 
             }
         } catch (error: unknown) {
             failed++;
-            errors.push(`Word op ${op.type}: ${error instanceof Error ? error.message : String(error)}`);
+            errors.push(`Word op ${op.type}: ${formatError(error)}`);
             console.error(`Failed to sync word operation:`, op, error);
         }
     }
@@ -117,7 +125,7 @@ async function processSentenceOperations(userId: string): Promise<{ synced: numb
             }
         } catch (error: unknown) {
             failed++;
-            errors.push(`Sentence op ${op.type}: ${error instanceof Error ? error.message : String(error)}`);
+            errors.push(`Sentence op ${op.type}: ${formatError(error)}`);
             console.error(`Failed to sync sentence operation:`, op, error);
         }
     }
