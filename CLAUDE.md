@@ -21,7 +21,7 @@ No ESLint or Prettier configured. Follow existing code patterns.
 
 AI-powered vocabulary learning PWA for Chinese speakers. Users enter English/German words and get Chinese translations, example sentences, etymology, and TTS pronunciation — all via OpenAI.
 
-**Tech stack**: React 19, Vite 7, Tailwind CSS 4, Supabase (auth + Postgres), OpenAI GPT-5-mini, Bun.
+**Tech stack**: React 19, Vite 7, Tailwind CSS 4, Supabase (auth + Postgres), OpenAI gpt-4.1, Bun.
 
 ### App Structure
 
@@ -63,10 +63,12 @@ Dev server proxies `/api/openai` → `https://api.openai.com` (configured in `vi
 ### Supabase Schema
 
 Two tables with Row Level Security (user can only access own data):
-- `words` — id, user_id, word, meaning, language ('en'|'de'), example, example_cn, category, date, etymology. Unique constraint: (user_id, word, language).
-- `saved_sentences` — id, user_id, sentence, sentence_cn, language, scene, source_type ('word'|'combined'), source_words (JSONB array).
+- `words` — id, user_id, word, meaning, language ('en'|'de'), example, example_cn, category ('daily'|'professional'|'formal'|''), date, created_at, etymology. PK: id. FK: user_id → auth.users(id) (no ON DELETE CASCADE). No UNIQUE constraint — dedup is enforced client-side via lowercase normalization.
+- `saved_sentences` — id, user_id, sentence, sentence_cn, language, scene, source_type ('word'|'combined'), source_words (JSONB array), created_at. PK: id. FK: user_id → auth.users(id) (no ON DELETE CASCADE).
 
-Full schema in `SUPABASE_SETUP.md`.
+Both tables: `anon` role has no grants (defense in depth). Only `authenticated` and `service_role` can access via Data API.
+
+Canonical DDL in `schema.sql` (single source of truth). Walkthrough in `SUPABASE_SETUP.md`.
 
 ## Code Conventions
 

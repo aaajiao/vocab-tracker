@@ -5,11 +5,11 @@ A multi-language vocabulary learning app powered by AI. Enter a word and get Chi
 ![React](https://img.shields.io/badge/React-19.0-61DAFB?logo=react)
 ![Vite](https://img.shields.io/badge/Vite-7.3-646CFF?logo=vite)
 ![Tailwind](https://img.shields.io/badge/Tailwind_CSS-4.0-38B2AC?logo=tailwind-css)
-![OpenAI](https://img.shields.io/badge/OpenAI-GPT--5--mini-412991?logo=openai)
+![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4.1-412991?logo=openai)
 
 ## Features
 
-- **AI Translation** — Automatic Chinese translations via OpenAI GPT-5-mini
+- **AI Translation** — Automatic Chinese translations via OpenAI gpt-4.1
 - **Contextual Examples** — Sentences generated based on word context (Daily / Professional / Formal)
 - **Etymology Analysis** — Word origin breakdowns (Latin, Greek, etc.) with collapsible UI
 - **Combined Sentences** — AI creates sentences using multiple saved words to reinforce memory
@@ -22,7 +22,7 @@ A multi-language vocabulary learning app powered by AI. Enter a word and get Chi
 - **Statistics** — Real-time vocabulary count by language and daily additions
 - **Search** — Filter by word or translation
 - **Date Grouping** — Vocabulary organized by addition date
-- **CSV Export** — Export vocabulary data
+- **Markdown Export** — Export vocabulary data as Markdown
 - **Cloud Sync** — Supabase backend for cross-device sync
 - **PWA + Offline** — Full offline access via Service Worker + IndexedDB; offline edits auto-sync when back online
 
@@ -72,7 +72,7 @@ Push to your Git repository. Vercel will auto-detect Vite and deploy. Configure 
 
 - **Frontend**: React 19, Vite 7, Tailwind CSS 4
 - **Backend / Storage**: Supabase (Auth + Postgres)
-- **AI**: OpenAI GPT-5-mini (translation & examples), OpenAI TTS (audio)
+- **AI**: OpenAI gpt-4.1 (translation & examples), OpenAI gpt-4o-mini-tts (audio)
 - **Runtime**: Bun
 
 ## Project Structure
@@ -90,11 +90,11 @@ src/
 └── services/            # API integrations (OpenAI, TTS, caching)
 ```
 
-Other top-level files: `CLAUDE.md` (agent dev guide), `SUPABASE_SETUP.md`, `vite.config.js`, `package.json`, `bun.lock`.
+Other top-level files: `CLAUDE.md` (agent dev guide), `SUPABASE_SETUP.md`, `schema.sql` (canonical DB schema), `migrations/` (one-shot SQL migrations), `vite.config.js`, `package.json`, `bun.lock`.
 
 ## Supabase Setup
 
-See [SUPABASE_SETUP.md](./SUPABASE_SETUP.md) for database schema and configuration.
+For a fresh project, run [`schema.sql`](./schema.sql) in the Supabase SQL Editor — it creates all tables, indexes, grants, and RLS policies in one shot. See [SUPABASE_SETUP.md](./SUPABASE_SETUP.md) for the bilingual step-by-step walkthrough and explanations. Past schema changes live in [`migrations/`](./migrations/).
 
 ## Changelog
 
