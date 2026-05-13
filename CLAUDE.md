@@ -9,11 +9,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Dev Server | `bun run dev` (http://localhost:5173) |
 | Build | `bun run build` |
 | Type Check | `bun x tsc` |
+| Test (run once) | `bun run test` |
+| Test (watch) | `bun run test:watch` |
 | Preview Build | `bun run preview` |
 
 **Runtime**: Bun only (Node.js is NOT installed). Use `bun` instead of `npm`/`npx`.
 
-**Pre-commit**: Run `bun x tsc` (zero errors) and `bun run build` (must succeed). No automated tests — verify UI manually.
+**Pre-commit**: Run `bun x tsc` (zero errors), `bun run test` (all pass), and `bun run build` (must succeed). Tests cover services-layer pure logic and IndexedDB cache; UI is still verified manually.
+
+**Test setup**: Vitest + happy-dom + fake-indexeddb. Tests live alongside source as `*.test.ts`. Config: `vitest.config.ts`. Setup file: `src/test/setup.ts`. See `src/services/*.test.ts` for examples — when adding a new service, add a test file co-located with it.
 
 No ESLint or Prettier configured. Follow existing code patterns.
 

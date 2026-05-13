@@ -6,6 +6,7 @@
 - **Word Normalization**: Added input normalization — words are now lowercased on add to prevent case-sensitive duplicates.
 - **Supabase Hardening**: Added explicit `GRANT` for `authenticated`/`service_role` to comply with Supabase's 2026-10-30 default-grant policy change. Revoked all `anon` grants on `words` / `saved_sentences` (defense in depth — RLS already blocks anon, but app never needs anonymous data access).
 - **Docs**: Added canonical `schema.sql` as single source of truth and `migrations/` directory for historical SQL changes.
+- **Tests**: Introduced Vitest + fake-indexeddb. Initial coverage: OpenAI request shape, JSON response parsing, audio cache key contract, and words cache pending-op preservation across server refresh.
 
 ## v1.6.1 (2026-02-12)
 - Migrated AI model from GPT-4o-mini to GPT-5-mini for improved translation quality.

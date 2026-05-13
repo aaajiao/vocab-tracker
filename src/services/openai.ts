@@ -32,7 +32,7 @@ function getLanguageName(langCode: string): string {
 }
 
 // Utility: Parse and clean JSON response from OpenAI
-function parseJSONResponse<T>(content: string): T | null {
+export function parseJSONResponse<T>(content: string): T | null {
     try {
         // Remove markdown code blocks if present
         const cleanedContent = content.trim().replace(/```json\n?|\n?```/g, '').trim();
