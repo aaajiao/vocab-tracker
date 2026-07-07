@@ -72,12 +72,16 @@ interface UseReviewReturn {
     reviewedTodayCount: number;
     totalTracked: number;
     tomorrowDueCount: number;
+    // 未到期但可「提前复习」的词数（due > 今天，非 temp）
+    aheadCount: number;
     // session
     session: ReviewSessionData | null;
     currentCard: Word | null;
     isSessionFinished: boolean;
     summary: ReviewSummary | null;
     startSession: () => void;
+    // 提前复习：无到期词时按到期日从近到远取一组
+    startAheadSession: () => void;
     nextRound: () => void;
     endSession: () => void;
     gradeWord: (wordId: string, grade: ReviewGrade) => Promise<void>;
@@ -245,13 +249,14 @@ export function useReview({
                 // 删孤儿（本地）
                 for (const o of orphans) await removeReviewCache(o.wordId);
 
-                // 建回填状态：>20 个时按批错峰 due（前 20 个明天、次 20 个后天…）
+                // 建回填状态：>20 个时按批错峰 due（前 20 个当天、次 20 个明天…）
+                // 第一批当天到期：让首次启用复习的用户立刻有卡可刷，而不是空等一天
                 const today = todayStr();
                 const now = nowIso();
                 const created: CachedReviewState[] = missing.map((w, i) => {
                     const bucket = Math.floor(i / BACKFILL_BATCH);
                     const base = initReviewState(w.id, today, now);
-                    const st: ReviewState = { ...base, due: addDays(today, bucket + 1) };
+                    const st: ReviewState = { ...base, due: addDays(today, bucket) };
                     return { ...st, syncStatus: 'pending_upsert' };
                 });
                 for (const c of created) await upsertReviewCache(c, 'pending_upsert');
@@ -313,14 +318,19 @@ export function useReview({
         const tomorrow = addDays(today, 1);
         return states.filter(s => s.due === tomorrow).length;
     }, [states, today]);
+    const aheadCount = useMemo(
+        () => states.filter(s => !s.wordId.startsWith('temp_') && s.due > today).length,
+        [states, today],
+    );
     const totalTracked = states.length;
 
     // ---- session 构建 ----
-    const buildSession = useCallback(() => {
+    // ahead=true 为「提前复习」：不限 due <= 今天，按到期日从近到远取一组（无到期词时也能主动刷）
+    const buildSession = useCallback((ahead = false) => {
         const t = todayStr();
         const wordMap = new Map(wordsRef.current.map(w => [w.id, w]));
         const dueStates = statesRef.current
-            .filter(s => !s.wordId.startsWith('temp_') && s.due <= t)
+            .filter(s => !s.wordId.startsWith('temp_') && (ahead || s.due <= t))
             .sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0))
             .slice(0, SESSION_LIMIT);
         // 关联词卡；缺词（孤儿）跳过
@@ -331,6 +341,7 @@ export function useReview({
     }, []);
 
     const startSession = useCallback(() => { buildSession(); }, [buildSession]);
+    const startAheadSession = useCallback(() => { buildSession(true); }, [buildSession]);
     const nextRound = useCallback(() => { buildSession(); }, [buildSession]);
     const endSession = useCallback(() => { setSession(null); }, []);
 
@@ -428,11 +439,13 @@ export function useReview({
         reviewedTodayCount,
         totalTracked,
         tomorrowDueCount,
+        aheadCount,
         session,
         currentCard,
         isSessionFinished,
         summary,
         startSession,
+        startAheadSession,
         nextRound,
         endSession,
         gradeWord,

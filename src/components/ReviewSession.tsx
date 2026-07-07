@@ -14,11 +14,13 @@ interface ReviewSessionProps {
     reviewedTodayCount: number;
     totalTracked: number;
     tomorrowDueCount: number;
+    aheadCount: number;
     session: ReviewSessionData | null;
     currentCard: Word | null;
     isSessionFinished: boolean;
     summary: ReviewSummary | null;
     startSession: () => void;
+    startAheadSession: () => void;
     nextRound: () => void;
     endSession: () => void;
     gradeWord: (wordId: string, grade: ReviewGrade) => Promise<void>;
@@ -65,9 +67,9 @@ function StatTile({ value, label }: { value: number; label: string }) {
 
 // 复习主视图：起始 / 空状态 · 进行中 · 小结 三态
 function ReviewSession({
-    loading, dueCount, reviewedTodayCount, totalTracked, tomorrowDueCount,
+    loading, dueCount, reviewedTodayCount, totalTracked, tomorrowDueCount, aheadCount,
     session, currentCard, isSessionFinished, summary,
-    startSession, nextRound, endSession, gradeWord, previewFor,
+    startSession, startAheadSession, nextRound, endSession, gradeWord, previewFor,
     speakingId, setSpeakingId, apiKey, cachedKeys, setCachedKeys,
     getCategoryClass, getCategoryLabel,
 }: ReviewSessionProps) {
@@ -214,6 +216,20 @@ function ReviewSession({
                     <div className="text-sm text-slate-500 dark:text-slate-400">
                         {totalTracked === 0 ? '添加单词后，次日就会出现在这里' : '暂时没有到期的单词，休息一下吧'}
                     </div>
+                    {/* 没有到期词但词库里有卡：允许把最近要到期的词提前拉出来刷 */}
+                    {aheadCount > 0 && (
+                        <div className="mt-6">
+                            <div className="flex justify-center mb-4">
+                                <ModeToggle mode={mode} onChange={changeMode} />
+                            </div>
+                            <button
+                                className="px-5 py-2.5 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-xl font-medium hover:bg-slate-50 dark:hover:bg-slate-800 active:scale-95 transition-all"
+                                onClick={startAheadSession}
+                            >
+                                ⏩ 提前复习
+                            </button>
+                        </div>
+                    )}
                 </>
             )}
             {statsRow}

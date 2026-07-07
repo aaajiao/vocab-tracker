@@ -101,11 +101,12 @@ function App() {
         reviewedTodayCount,
         totalTracked,
         tomorrowDueCount,
+        aheadCount,
         session: reviewSession,
         currentCard: reviewCurrentCard,
         isSessionFinished: reviewFinished,
         summary: reviewSummary,
-        startSession, nextRound, endSession,
+        startSession, startAheadSession, nextRound, endSession,
         gradeWord, previewFor, removeReviewState
     } = useReview({
         userId: user?.id,
@@ -1272,11 +1273,13 @@ function App() {
                     reviewedTodayCount={reviewedTodayCount}
                     totalTracked={totalTracked}
                     tomorrowDueCount={tomorrowDueCount}
+                    aheadCount={aheadCount}
                     session={reviewSession}
                     currentCard={reviewCurrentCard}
                     isSessionFinished={reviewFinished}
                     summary={reviewSummary}
                     startSession={startSession}
+                    startAheadSession={startAheadSession}
                     nextRound={nextRound}
                     endSession={endSession}
                     gradeWord={gradeWord}
