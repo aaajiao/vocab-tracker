@@ -928,8 +928,8 @@ function App() {
                 </button>
             </div>
 
-            {/* Tabs */}
-            <div className="flex gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl mb-6">
+            {/* Tabs：按钮禁止换行，窄屏时整条横向滚动而非挤压换行 */}
+            <div className="flex gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl mb-6 overflow-x-auto">
                 {[{ id: 'all' as const, label: '全部' }, { id: 'en' as const, label: '🇬🇧 英语' }, { id: 'de' as const, label: '🇩🇪 德语' }, { id: 'saved' as const, label: '⭐ 收藏' }, { id: 'review' as const, label: '📖 复习' }].map(t => {
                     // 复习 tab 显到期徽标（>0 才显示，99+ 封顶）；其余 tab 显数量
                     let badge: string | null;
@@ -945,7 +945,7 @@ function App() {
                     return (
                         <button
                             key={t.id}
-                            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === t.id
+                            className={`flex-1 px-2 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${activeTab === t.id
                                 ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm'
                                 : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
                                 }`}
