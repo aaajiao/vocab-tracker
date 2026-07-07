@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import type { Word, SentenceData, SavedSentence, ExpansionPreviewItem, SentenceAnalysis, SentenceKeyword } from './types';
+import type { Word, SentenceData, ExpansionPreviewItem, SentenceAnalysis, SentenceKeyword } from './types';
 
 // Components
 import { Icons } from './components/Icons';
@@ -10,6 +10,7 @@ import UndoToast from './components/UndoToast';
 import ToastContainer from './components/ToastContainer';
 import SwipeableSentenceCard from './components/SwipeableSentenceCard';
 import SentenceCard from './components/SentenceCard';
+import ReviewSession from './components/ReviewSession';
 import { PageSkeleton } from './components/Skeleton';
 
 // Constants
@@ -27,6 +28,7 @@ import { useTheme } from './hooks/useTheme';
 import { useAuth } from './hooks/useAuth';
 import { useWords } from './hooks/useWords';
 import { useSentences } from './hooks/useSentences';
+import { useReview } from './hooks/useReview';
 import { useDebounce } from './hooks/useDebounce';
 import { useToast } from './hooks/useToast';
 import { useUndo } from './hooks/useUndo';
@@ -92,8 +94,29 @@ function App() {
         onPendingChange: refreshPendingCount
     });
 
+    // 复习功能（SRS）：从 useWords 传入 words 组合，复习状态与词库对账
+    const {
+        loading: reviewLoading,
+        dueCount,
+        reviewedTodayCount,
+        totalTracked,
+        tomorrowDueCount,
+        session: reviewSession,
+        currentCard: reviewCurrentCard,
+        isSessionFinished: reviewFinished,
+        summary: reviewSummary,
+        startSession, nextRound, endSession,
+        gradeWord, previewFor, removeReviewState
+    } = useReview({
+        userId: user?.id,
+        words,
+        wordsLoading,
+        isOnline,
+        onPendingChange: refreshPendingCount
+    });
+
     // Local state
-    const [activeTab, setActiveTab] = useState<'all' | 'en' | 'de' | 'saved'>('all');
+    const [activeTab, setActiveTab] = useState<'all' | 'en' | 'de' | 'saved' | 'review'>('all');
     const [searchQuery, setSearchQuery] = useState('');
     const debouncedSearchQuery = useDebounce(searchQuery, DEBOUNCE_DELAY);
     // 收藏 tab 的语言过滤（本地状态，仅影响收藏列表展示）
@@ -473,6 +496,9 @@ function App() {
     const handleDeleteWord = useCallback(async (id: string) => {
         const deleted = await deleteWord(id);
         if (deleted) {
+            // 删词联动：清本地复习状态（fire-and-forget；服务端靠 FK CASCADE）。
+            // 撤销时该词由 useReview 的回填对账重新补建状态（可接受的轻微 SRS 漂移）。
+            removeReviewState(id);
             markDeleted({
                 id: deleted.id,
                 type: 'word',
@@ -480,7 +506,7 @@ function App() {
                 restore: async () => { await restoreWord(deleted); }
             });
         }
-    }, [deleteWord, markDeleted, restoreWord]);
+    }, [deleteWord, markDeleted, restoreWord, removeReviewState]);
 
     const handleDeleteSentence = useCallback(async (id: string) => {
         const deleted = await unsaveSentence(id);
@@ -904,18 +930,37 @@ function App() {
 
             {/* Tabs */}
             <div className="flex gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl mb-6">
-                {[{ id: 'all' as const, label: '全部' }, { id: 'en' as const, label: '🇬🇧 英语' }, { id: 'de' as const, label: '🇩🇪 德语' }, { id: 'saved' as const, label: '⭐ 收藏' }].map(t => (
-                    <button
-                        key={t.id}
-                        className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === t.id
-                            ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm'
-                            : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                            }`}
-                        onClick={() => { setActiveTab(t.id); setTodayFilter(false); setShowSentence(false); setSentenceData(null); setShowExpansion(false); setExpansionData(null); }}
-                    >
-                        {t.label}<span className="ml-1 opacity-60 text-xs">{t.id === 'all' ? allStats.total : allStats[t.id]}</span>
-                    </button>
-                ))}
+                {[{ id: 'all' as const, label: '全部' }, { id: 'en' as const, label: '🇬🇧 英语' }, { id: 'de' as const, label: '🇩🇪 德语' }, { id: 'saved' as const, label: '⭐ 收藏' }, { id: 'review' as const, label: '📖 复习' }].map(t => {
+                    // 复习 tab 显到期徽标（>0 才显示，99+ 封顶）；其余 tab 显数量
+                    let badge: string | null;
+                    if (t.id === 'review') {
+                        badge = dueCount > 0 ? (dueCount > 99 ? '99+' : String(dueCount)) : null;
+                    } else if (t.id === 'all') {
+                        badge = String(allStats.total);
+                    } else if (t.id === 'saved') {
+                        badge = String(allStats.saved);
+                    } else {
+                        badge = String(allStats[t.id]);
+                    }
+                    return (
+                        <button
+                            key={t.id}
+                            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === t.id
+                                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm'
+                                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                                }`}
+                            onClick={() => { setActiveTab(t.id); setTodayFilter(false); setShowSentence(false); setSentenceData(null); setShowExpansion(false); setExpansionData(null); }}
+                        >
+                            {t.label}
+                            {badge !== null && (
+                                <span className={`ml-1 text-xs ${t.id === 'review'
+                                    ? 'inline-flex items-center justify-center min-w-[18px] px-1 rounded-full bg-amber-500 text-white font-semibold align-middle'
+                                    : 'opacity-60'
+                                    }`}>{badge}</span>
+                            )}
+                        </button>
+                    );
+                })}
             </div>
 
             {/* Sentence Generation & Vocabulary Expansion Panel */}
@@ -1220,7 +1265,31 @@ function App() {
             )}
 
             {/* Word List */}
-            {activeTab === 'saved' ? (
+            {activeTab === 'review' ? (
+                <ReviewSession
+                    loading={reviewLoading}
+                    dueCount={dueCount}
+                    reviewedTodayCount={reviewedTodayCount}
+                    totalTracked={totalTracked}
+                    tomorrowDueCount={tomorrowDueCount}
+                    session={reviewSession}
+                    currentCard={reviewCurrentCard}
+                    isSessionFinished={reviewFinished}
+                    summary={reviewSummary}
+                    startSession={startSession}
+                    nextRound={nextRound}
+                    endSession={endSession}
+                    gradeWord={gradeWord}
+                    previewFor={previewFor}
+                    speakingId={speakingId}
+                    setSpeakingId={setSpeakingId}
+                    apiKey={apiKey}
+                    cachedKeys={cachedKeys}
+                    setCachedKeys={setCachedKeys}
+                    getCategoryClass={getCategoryClass}
+                    getCategoryLabel={getCategoryLabel}
+                />
+            ) : activeTab === 'saved' ? (
                 <div>
                     {savedSentences.length === 0 ? (
                         // 完全没有收藏

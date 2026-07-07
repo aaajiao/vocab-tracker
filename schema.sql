@@ -38,9 +38,12 @@ CREATE INDEX IF NOT EXISTS idx_words_date     ON public.words(date);
 
 -- Data API 授权
 -- 2026-05-30 起新项目必须显式 GRANT，2026-10-30 对所有现有项目强制执行。
--- 故意不向 `anon` 授权 —— 本应用所有数据均需登录访问。
+-- `anon` 无任何权限 —— 本应用所有数据均需登录访问。
+-- 注意：Supabase 对 public schema 有默认授权，CREATE TABLE 时会自动把全部权限
+-- 授给 anon，必须显式 REVOKE 收掉，只写「不 GRANT」是不够的。
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.words TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.words TO service_role;
+REVOKE ALL ON public.words FROM anon;
 
 -- 行级安全
 ALTER TABLE public.words ENABLE ROW LEVEL SECURITY;
@@ -91,9 +94,10 @@ CREATE TABLE IF NOT EXISTS public.saved_sentences (
 CREATE INDEX IF NOT EXISTS idx_saved_sentences_user_id  ON public.saved_sentences(user_id);
 CREATE INDEX IF NOT EXISTS idx_saved_sentences_language ON public.saved_sentences(language);
 
--- Data API 授权（同上策略）
+-- Data API 授权（同上策略，含收掉 anon 默认授权）
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.saved_sentences TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.saved_sentences TO service_role;
+REVOKE ALL ON public.saved_sentences FROM anon;
 
 -- 行级安全
 ALTER TABLE public.saved_sentences ENABLE ROW LEVEL SECURITY;
@@ -116,6 +120,60 @@ CREATE POLICY "Users can delete own saved sentences"
 
 
 -- ============================================================
+-- 3. review_states 表 —— 单词的间隔重复（SRS）复习状态
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.review_states (
+    word_id          uuid NOT NULL,
+    user_id          uuid NOT NULL,
+    due              date NOT NULL,
+    interval_days    integer NOT NULL DEFAULT 0,
+    ease             real NOT NULL DEFAULT 2.5,
+    reps             integer NOT NULL DEFAULT 0,
+    lapses           integer NOT NULL DEFAULT 0,
+    last_reviewed_at timestamp with time zone,
+    updated_at       timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+    CONSTRAINT review_states_pkey PRIMARY KEY (word_id),
+    -- 删词自动清理其复习状态（有意为之：复习状态离不开对应的词）
+    CONSTRAINT review_states_word_id_fkey FOREIGN KEY (word_id)
+        REFERENCES public.words(id) ON DELETE CASCADE,
+    CONSTRAINT review_states_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+
+-- 索引：按用户 + 到期日查询「今日到期」
+CREATE INDEX IF NOT EXISTS idx_review_states_user_due ON public.review_states(user_id, due);
+
+-- Data API 授权（同 words 表策略，含收掉 anon 默认授权）
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.review_states TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.review_states TO service_role;
+REVOKE ALL ON public.review_states FROM anon;
+
+-- 行级安全
+ALTER TABLE public.review_states ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own review states"   ON public.review_states;
+DROP POLICY IF EXISTS "Users can insert own review states" ON public.review_states;
+DROP POLICY IF EXISTS "Users can update own review states" ON public.review_states;
+DROP POLICY IF EXISTS "Users can delete own review states" ON public.review_states;
+
+CREATE POLICY "Users can view own review states"
+    ON public.review_states FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own review states"
+    ON public.review_states FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own review states"
+    ON public.review_states FOR UPDATE
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own review states"
+    ON public.review_states FOR DELETE
+    USING (auth.uid() = user_id);
+
+
+-- ============================================================
 -- 验证（可选）：查看授权情况
 -- ============================================================
 -- 期望结果：authenticated / service_role / postgres 各 1 行，无 anon
@@ -125,7 +183,7 @@ CREATE POLICY "Users can delete own saved sentences"
 --     string_agg(privilege_type, ', ' ORDER BY privilege_type) AS privileges
 -- FROM information_schema.role_table_grants
 -- WHERE table_schema = 'public'
---   AND table_name IN ('words', 'saved_sentences')
+--   AND table_name IN ('words', 'saved_sentences', 'review_states')
 --   AND grantee IN ('anon', 'authenticated', 'service_role', 'postgres')
 -- GROUP BY table_name, grantee
 -- ORDER BY table_name, grantee;

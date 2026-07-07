@@ -40,7 +40,8 @@ export const CATEGORY_CONFIG = {
 export const STORAGE_KEYS = {
     API_KEY: 'vocab-api-key',
     API_KEY_DELETED: 'vocab-api-key-deleted',
-    THEME: 'theme'
+    THEME: 'theme',
+    REVIEW_MODE: 'vocab-review-mode'  // 记忆复习模式（翻转 / 挖空）
 } as const;
 
 // ==================== Tab Configuration ====================
@@ -48,10 +49,11 @@ export const TABS = [
     { id: 'all' as const, label: '全部' },
     { id: 'en' as const, label: '🇬🇧 英语' },
     { id: 'de' as const, label: '🇩🇪 德语' },
-    { id: 'saved' as const, label: '⭐ 收藏' }
+    { id: 'saved' as const, label: '⭐ 收藏' },
+    { id: 'review' as const, label: '📖 复习' }
 ] as const;
 
-export type TabId = 'all' | 'en' | 'de' | 'saved';
+export type TabId = 'all' | 'en' | 'de' | 'saved' | 'review';
 
 // ==================== Sentence Source Types ====================
 // 收藏句子来源类型的展示文案（含用户直接输入的句子 input）

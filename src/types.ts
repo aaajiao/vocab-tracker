@@ -1,5 +1,8 @@
 /// <reference types="vite/client" />
 
+// 复习功能类型：单一定义在 services/srs.ts，这里 re-export 供全局按 '../types' 引用
+export type { ReviewGrade, ReviewState } from './services/srs';
+
 // Word type from database
 export interface Word {
     id: string;
@@ -163,6 +166,23 @@ export interface AuthFormProps {
 export interface SpeakerIconProps {
     playing: boolean;
     cached: boolean;
+}
+
+// 复习卡片 props：翻转模式（词→义）+ 例句挖空模式共用一张卡
+export interface ReviewCardProps {
+    word: Word;
+    mode: 'flip' | 'cloze';                                        // 用户选择的复习模式
+    // 该词三键的「下次间隔」天数预览（来自 useReview.previewFor）；无状态时为 null
+    preview: { forgot: number; fuzzy: number; known: number } | null;
+    onGrade: (grade: 'forgot' | 'fuzzy' | 'known') => void;        // 评级回调（推进 session）
+    // TTS 三件套（复用现有管线与状态感知 SpeakerIcon）
+    speakingId: string | null;
+    setSpeakingId: (id: string | null) => void;
+    apiKey: string;
+    cachedKeys: Set<string>;
+    setCachedKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
+    getCategoryClass: (cat: string) => string;
+    getCategoryLabel: (cat: string) => string;
 }
 
 export interface StarIconProps {

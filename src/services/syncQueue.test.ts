@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Word } from '../types';
+import type { ReviewState } from './srs';
 
 // Mock the supabase client BEFORE importing anything that pulls it in.
 // syncQueue.ts → import { supabase } from '../supabaseClient'
@@ -20,6 +21,25 @@ const {
     clearWordsCache,
 } = await import('./wordsCache');
 const { clearSentencesCache } = await import('./sentencesCache');
+const {
+    upsert: upsertReviewState,
+    getPending: getPendingReviewStates,
+    get: getReviewState,
+    clear: clearReviewCache,
+} = await import('./reviewCache');
+
+function makeReviewState(wordId: string): ReviewState {
+    return {
+        wordId,
+        due: '2026-07-08',
+        intervalDays: 3,
+        ease: 2.5,
+        reps: 1,
+        lapses: 0,
+        lastReviewedAt: '2026-07-07T10:00:00.000Z',
+        updatedAt: '2026-07-07T10:00:00.000Z',
+    };
+}
 
 function makeWord(overrides: Partial<Word> = {}): Word {
     return {
@@ -55,6 +75,7 @@ describe('syncPendingOperations', () => {
     beforeEach(async () => {
         await clearWordsCache();
         await clearSentencesCache();
+        await clearReviewCache();
         fromMock.mockReset();
     });
 
@@ -200,5 +221,87 @@ describe('syncPendingOperations', () => {
         expect(insertCalls).toBe(1);
         expect(r1).toBe(r2);
         expect(r1.synced).toBe(1);
+    });
+});
+
+describe('syncPendingOperations — review states', () => {
+    beforeEach(async () => {
+        await clearWordsCache();
+        await clearSentencesCache();
+        await clearReviewCache();
+        fromMock.mockReset();
+    });
+
+    // 只为 review_states 表打桩 upsert 链：from('review_states').upsert(rows, opts) → { error }
+    function mockReviewUpsert(error: unknown = null) {
+        fromMock.mockImplementation((table: string) => {
+            if (table === 'review_states') {
+                return { upsert: vi.fn().mockResolvedValue({ error }) };
+            }
+            // 其他表本测试无 pending，不应被调用
+            return { insert: vi.fn(), delete: vi.fn(), upsert: vi.fn() };
+        });
+    }
+
+    it('upserts a pending review state and marks it synced', async () => {
+        await upsertReviewState(makeReviewState('word-uuid-1'), 'pending_upsert');
+        mockReviewUpsert(null);
+
+        const result = await syncPendingOperations('user-123');
+
+        expect(result.success).toBe(true);
+        expect(result.synced).toBe(1);
+        expect(fromMock).toHaveBeenCalledWith('review_states');
+
+        // 同步后不再 pending
+        expect(await getPendingReviewStates()).toHaveLength(0);
+        const state = await getReviewState('word-uuid-1');
+        expect(state?.syncStatus).toBe('synced');
+    });
+
+    it('keeps the state pending when the upsert errors (e.g. table not migrated)', async () => {
+        await upsertReviewState(makeReviewState('word-uuid-2'), 'pending_upsert');
+        mockReviewUpsert({ message: 'relation "review_states" does not exist', code: '42P01' });
+
+        const result = await syncPendingOperations('user-123');
+
+        expect(result.success).toBe(false);
+        expect(result.failed).toBe(1);
+        expect(result.errors[0]).toContain('review_states');
+
+        // 保持 pending，供下次重试
+        expect(await getPendingReviewStates()).toHaveLength(1);
+    });
+
+    it('discards the pending op and local state on a foreign-key violation', async () => {
+        await upsertReviewState(makeReviewState('word-deleted'), 'pending_upsert');
+        mockReviewUpsert({ message: 'insert or update violates foreign key', code: '23503' });
+
+        const result = await syncPendingOperations('user-123');
+
+        // FK 冲突不计失败、不阻塞
+        expect(result.failed).toBe(0);
+        expect(result.synced).toBe(0);
+        // 本地状态被丢弃
+        expect(await getReviewState('word-deleted')).toBeUndefined();
+        expect(await getPendingReviewStates()).toHaveLength(0);
+    });
+
+    it('skips and drops a temp-id review state without hitting supabase', async () => {
+        await upsertReviewState(makeReviewState('temp_123_abc'), 'pending_upsert');
+
+        const result = await syncPendingOperations('user-123');
+
+        expect(result.synced).toBe(0);
+        expect(result.failed).toBe(0);
+        expect(fromMock).not.toHaveBeenCalled();
+        // temp id 状态被丢弃
+        expect(await getReviewState('temp_123_abc')).toBeUndefined();
+    });
+
+    it('counts review pending states in getPendingCount', async () => {
+        await upsertReviewState(makeReviewState('word-a'), 'pending_upsert');
+        await upsertReviewState(makeReviewState('word-b'), 'synced');
+        expect(await getPendingCount()).toBe(1);
     });
 });

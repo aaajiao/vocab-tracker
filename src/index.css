@@ -109,3 +109,30 @@
         display: none !important;
     }
 }
+
+/* 复习卡片 3D 翻转（词→义 / 例句挖空）
+   用 grid 让正反两面堆叠在同一格，卡片高度自动取两面较高者，规避正反面高度不一造成的裁切。 */
+.review-flip-scene {
+    perspective: 1200px;
+}
+
+.review-flip-card {
+    display: grid;
+    transform-style: preserve-3d;
+    transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+}
+
+.review-flip-card.is-flipped {
+    transform: rotateY(180deg);
+}
+
+.review-flip-face {
+    grid-area: 1 / 1;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+
+.review-flip-back {
+    transform: rotateY(180deg);
+}
