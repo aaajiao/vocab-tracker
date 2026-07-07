@@ -12,6 +12,17 @@ export interface CachedSentence extends SavedSentence {
     syncStatus: 'synced' | 'pending_add' | 'pending_delete';
 }
 
+// 归一化从 Supabase / 缓存读回的句子：老数据可能没有 keywords/grammar 列（null），
+// 统一兜底为空数组，避免下游读取 length 时报错。source_words 同样兜底。
+export function withSentenceDefaults(row: SavedSentence): SavedSentence {
+    return {
+        ...row,
+        source_words: row.source_words ?? [],
+        keywords: row.keywords ?? [],
+        grammar: row.grammar ?? []
+    };
+}
+
 export interface PendingSentenceOperation {
     id: string;
     type: 'add_sentence' | 'delete_sentence';
@@ -223,6 +234,35 @@ export async function removePendingSentenceOperation(id: string): Promise<void> 
         });
     } catch (error) {
         console.error('Failed to remove pending sentence operation:', error);
+    }
+}
+
+// 递增并持久化某个待同步句子操作的重试次数，返回递增后的次数。
+// 同步失败时调用，配合重试上限跳过注定失败的操作。操作本身不删除（不丢数据）。
+export async function incrementSentenceOperationRetry(id: string): Promise<number> {
+    try {
+        const db = await getDB();
+        return new Promise((resolve) => {
+            const transaction = db.transaction(PENDING_STORE, 'readwrite');
+            const store = transaction.objectStore(PENDING_STORE);
+            let newCount = 0;
+
+            const getRequest = store.get(id);
+            getRequest.onsuccess = () => {
+                const op = getRequest.result as PendingSentenceOperation | undefined;
+                if (op) {
+                    newCount = (op.retryCount || 0) + 1;
+                    op.retryCount = newCount;
+                    store.put(op);
+                }
+            };
+
+            transaction.oncomplete = () => resolve(newCount);
+            transaction.onerror = () => resolve(newCount);
+        });
+    } catch (error) {
+        console.error('Failed to increment sentence operation retry:', error);
+        return 0;
     }
 }
 

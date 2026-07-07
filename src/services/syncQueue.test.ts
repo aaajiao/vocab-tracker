@@ -11,11 +11,12 @@ vi.mock('../supabaseClient', () => ({
 }));
 
 // Now import the module under test and the cache helpers.
-const { syncPendingOperations } = await import('./syncQueue');
+const { syncPendingOperations, getPendingCount, MAX_SYNC_RETRIES } = await import('./syncQueue');
 const {
     addPendingWord,
     getAllCachedWords,
     getPendingOperations,
+    incrementOperationRetry,
     clearWordsCache,
 } = await import('./wordsCache');
 const { clearSentencesCache } = await import('./sentencesCache');
@@ -115,5 +116,89 @@ describe('syncPendingOperations', () => {
         const result = await syncPendingOperations('');
         expect(result.success).toBe(false);
         expect(result.errors).toContain('No user ID');
+    });
+
+    it('bumps retryCount on failure so the same op is not retried forever', async () => {
+        await addPendingWord(makeWord({ id: 'temp_retry', word: 'kiwi' }));
+
+        mockInsertResolves(null, { message: 'boom', code: '500' });
+        await syncPendingOperations('user-123');
+
+        const pending = await getPendingOperations();
+        expect(pending).toHaveLength(1);
+        expect(pending[0].retryCount).toBe(1);
+    });
+
+    it('reports deadLettered when an op crosses the retry ceiling', async () => {
+        await addPendingWord(makeWord({ id: 'temp_cross', word: 'lime' }));
+        // 把重试次数顶到上限前一次（MAX-1）
+        for (let i = 0; i < MAX_SYNC_RETRIES - 1; i++) {
+            await incrementOperationRetry('add_temp_cross');
+        }
+
+        // 这次 insert 失败 → retryCount 从 MAX-1 增到 MAX，刚好跨过上限
+        mockInsertResolves(null, { message: 'still failing', code: '500' });
+        const result = await syncPendingOperations('user-123');
+
+        expect(result.failed).toBe(1);
+        expect(result.deadLettered).toBe(1);
+        // 跨过上限后不再计入待同步数（避免徽标永挂）
+        expect(await getPendingCount()).toBe(0);
+    });
+
+    it('skips ops at the retry ceiling: no request, not counted, data retained', async () => {
+        await addPendingWord(makeWord({ id: 'temp_dead', word: 'mango' }));
+        for (let i = 0; i < MAX_SYNC_RETRIES; i++) {
+            await incrementOperationRetry('add_temp_dead');
+        }
+
+        // 已达上限：getPendingCount 排除它
+        expect(await getPendingCount()).toBe(0);
+
+        // 再次同步：跳过该操作，不发起任何 supabase 调用（未设置 mock，被调用会抛错暴露问题）
+        const result = await syncPendingOperations('user-123');
+        expect(result.synced).toBe(0);
+        expect(result.failed).toBe(0);
+        expect(result.deadLettered).toBe(0);
+        expect(fromMock).not.toHaveBeenCalled();
+
+        // 数据仍保留在 IndexedDB（不丢数据）
+        const pending = await getPendingOperations();
+        expect(pending).toHaveLength(1);
+        const cached = await getAllCachedWords();
+        expect(cached.map(w => w.id)).toContain('temp_dead');
+    });
+
+    it('runs only once when called concurrently (in-flight mutex)', async () => {
+        await addPendingWord(makeWord({ id: 'temp_concurrent', word: 'nectarine' }));
+        const serverId = 'server-uuid-concurrent';
+
+        let insertCalls = 0;
+        fromMock.mockImplementation((table: string) => {
+            if (table === 'words') {
+                return {
+                    insert: () => {
+                        insertCalls++;
+                        return {
+                            select: () => ({
+                                single: () => Promise.resolve({ data: { id: serverId }, error: null }),
+                            }),
+                        };
+                    },
+                };
+            }
+            // saved_sentences：无 pending 操作，不会被真正调用
+            return { insert: vi.fn(), delete: vi.fn() };
+        });
+
+        const [r1, r2] = await Promise.all([
+            syncPendingOperations('user-123'),
+            syncPendingOperations('user-123'),
+        ]);
+
+        // 两次并发调用复用同一 Promise，insert 只发生一次
+        expect(insertCalls).toBe(1);
+        expect(r1).toBe(r2);
+        expect(r1.synced).toBe(1);
     });
 });

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import type { Word, SentenceData, SavedSentence, ExpansionPreviewItem } from './types';
+import type { Word, SentenceData, SavedSentence, ExpansionPreviewItem, SentenceAnalysis, SentenceKeyword } from './types';
 
 // Components
 import { Icons } from './components/Icons';
@@ -9,14 +9,18 @@ import SettingsPanel from './components/SettingsPanel';
 import UndoToast from './components/UndoToast';
 import ToastContainer from './components/ToastContainer';
 import SwipeableSentenceCard from './components/SwipeableSentenceCard';
+import SentenceCard from './components/SentenceCard';
 import { PageSkeleton } from './components/Skeleton';
 
 // Constants
-import { DEBOUNCE_DELAY, AI_TYPING_DELAY, STORAGE_KEYS, CATEGORY_CONFIG } from './constants';
+import { DEBOUNCE_DELAY, AI_TYPING_DELAY, STORAGE_KEYS, CATEGORY_CONFIG, sceneFromRegister } from './constants';
 
 // Services
-import { getAIContent, detectAndGetContent, regenerateExample, generateCombinedSentence, generateVocabularyExpansion } from './services/openai';
+import { getAIContent, detectAndAnalyze, regenerateExample, generateCombinedSentence, generateVocabularyExpansion, sanitizeCategory } from './services/openai';
 import { speakWord } from './services/tts';
+import { generateCacheKey } from './services/audioCache';
+import { classifyInput } from './services/inputHeuristic';
+import { filterSavedSentences, type SentenceLanguageFilter } from './services/sentenceFilter';
 
 // Hooks
 import { useTheme } from './hooks/useTheme';
@@ -48,14 +52,18 @@ function App() {
     // Network status
     const { isOnline, pendingCount, isSyncing: networkSyncing, syncNow, refreshPendingCount } = useNetworkStatus({
         userId: user?.id,
-        onSyncComplete: (synced, failed) => {
+        onSyncComplete: (synced, failed, deadLettered) => {
             if (synced > 0) {
                 showToast('success', `已同步 ${synced} 项`);
                 // Refresh data from server after sync
                 refreshFromServer();
                 refreshSentencesFromServer();
             }
-            if (failed > 0) {
+            // deadLettered 是 failed 的子集（重试刚跨过上限、此后不再自动重试），
+            // 给出比普通失败更明确、可操作的提示；否则回退到通用的瞬时失败提示。
+            if (deadLettered > 0) {
+                showToast('error', `${deadLettered} 项多次同步失败，已暂停自动重试`);
+            } else if (failed > 0) {
                 showToast('error', `${failed} 项同步失败`);
             }
         }
@@ -88,8 +96,16 @@ function App() {
     const [activeTab, setActiveTab] = useState<'all' | 'en' | 'de' | 'saved'>('all');
     const [searchQuery, setSearchQuery] = useState('');
     const debouncedSearchQuery = useDebounce(searchQuery, DEBOUNCE_DELAY);
+    // 收藏 tab 的语言过滤（本地状态，仅影响收藏列表展示）
+    const [savedLanguageFilter, setSavedLanguageFilter] = useState<SentenceLanguageFilter>('all');
     const [isAdding, setIsAdding] = useState(false);
     const [newWord, setNewWord] = useState<NewWord>({ word: '', meaning: '', language: 'en', example: '', exampleCn: '', category: '', etymology: '' });
+    // 输入模式：单词 or 句子。默认由 classifyInput 本地预判，权威值以 detectAndAnalyze 的 AI 结果为准
+    const [inputMode, setInputMode] = useState<'word' | 'sentence'>('word');
+    const [sentenceDraft, setSentenceDraft] = useState<SentenceAnalysis | null>(null);
+    const [sentenceAiLoading, setSentenceAiLoading] = useState(false);
+    // 句子解析因离线 / AI 失败而不可得：仍允许手填翻译后离线保存
+    const [sentenceNeedsConnection, setSentenceNeedsConnection] = useState(false);
     const [aiLoading, setAiLoading] = useState(false);
     const [speakingId, setSpeakingId] = useState<string | null>(null);
     const [cachedKeys, setCachedKeys] = useState<Set<string>>(() => new Set());
@@ -120,6 +136,14 @@ function App() {
     const inputRef = useRef<HTMLInputElement>(null);
     const aiTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const ignoreFetch = useRef(false);
+    // AI 请求序号：每次发起 ++，回填前校验仍是最新，避免双请求竞态（后返回者覆盖）
+    const aiSeqRef = useRef(0);
+    // 保存最新的 newWord，供异步回调中读取（规避闭包捕获的过期值）
+    const newWordRef = useRef(newWord);
+    newWordRef.current = newWord;
+    // 保存最新的 inputMode，供防抖定时器回调判断当前是否仍在单词模式（句子模式不回填单词字段）
+    const inputModeRef = useRef(inputMode);
+    inputModeRef.current = inputMode;
 
     const loading = authLoading || wordsLoading;
 
@@ -137,27 +161,41 @@ function App() {
         if (isAdding && inputRef.current) inputRef.current.focus();
     }, [isAdding]);
 
-    // AI content
+    // AI content（仅单词模式逐字防抖重取；句子模式不逐字重取，交由 handleStartAdd / 手动切换触发）
     useEffect(() => {
         if (ignoreFetch.current) {
             ignoreFetch.current = false;
             return;
         }
+        // 句子模式不逐字重取（用 ref 读当前模式，避免把 inputMode 加进依赖导致切换时重复请求）
+        if (inputModeRef.current !== 'word') return;
         if (!newWord.word.trim()) return;
         if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
         if (!apiKey) return;
 
         aiTimeoutRef.current = setTimeout(async () => {
-            if (newWord.word.trim().length >= 1) {
+            const requestText = newWord.word.trim();
+            if (requestText.length >= 1) {
+                const seq = ++aiSeqRef.current;
                 setAiLoading(true);
-                const content = await getAIContent(newWord.word.trim(), newWord.language, apiKey);
-                if (content) {
+                const content = await getAIContent(
+                    requestText,
+                    newWord.language,
+                    apiKey,
+                    (msg) => { if (seq === aiSeqRef.current) showToast('error', msg); }
+                );
+                // 竞态防护：非最新请求直接丢弃，loading 由更新的请求负责收尾
+                if (seq !== aiSeqRef.current) return;
+                // 若期间已切到句子模式，丢弃该结果（避免回填单词字段）
+                if (inputModeRef.current !== 'word') { setAiLoading(false); return; }
+                // 仅当输入框文本仍等于发起时文本才回填，避免后返回者覆盖成错配条目
+                if (content && newWordRef.current.word.trim() === requestText) {
                     setNewWord(prev => ({
                         ...prev,
                         meaning: content.translation || prev.meaning,
                         example: content.example || '',
                         exampleCn: content.exampleCn || '',
-                        category: content.category || '',
+                        category: sanitizeCategory(content.category),
                         etymology: content.etymology || ''
                     }));
                 }
@@ -178,39 +216,247 @@ function App() {
         setRegeneratingId(null);
     }, [words, apiKey, updateWordExample]);
 
+    // 重置并关闭添加表单（单词/句子两种模式共用）
+    const resetAddForm = useCallback(() => {
+        if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
+        setIsAdding(false);
+        setInputMode('word');
+        setSentenceDraft(null);
+        setSentenceAiLoading(false);
+        setSentenceNeedsConnection(false);
+        setAiLoading(false);
+        setNewWord(prev => ({ word: '', meaning: '', language: prev.language, example: '', exampleCn: '', category: '', etymology: '' }));
+    }, []);
+
     const handleStartAdd = async () => {
         setIsAdding(true);
-        if (searchQuery.trim()) {
-            const text = searchQuery.trim();
-            ignoreFetch.current = true;
-            setNewWord(prev => ({ ...prev, word: text }));
+        const text = searchQuery.trim();
+        if (!text) return;
 
-            if (apiKey) {
-                setAiLoading(true);
-                const content = await detectAndGetContent(text, apiKey);
+        if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
 
-                if (content) {
-                    ignoreFetch.current = true;
-                    setNewWord(prev => ({
-                        ...prev,
-                        language: content.language,
-                        meaning: content.translation,
-                        example: content.example,
-                        exampleCn: content.exampleCn,
-                        category: content.category,
-                        etymology: content.etymology || ''
-                    }));
-                }
-                setAiLoading(false);
+        // 本地启发式先定默认模式，立即渲染对应骨架（不等 AI）
+        const guessed = classifyInput(text);
+        setInputMode(guessed);
+        ignoreFetch.current = true;
+        setNewWord(prev => ({ ...prev, word: text }));
+
+        if (guessed === 'sentence') {
+            // 临时占位：先把原句显示出来，翻译/重点词随后由 AI 回填
+            setSentenceDraft({ language: newWord.language, sentence: text, translation: '', keywords: [], grammar: [] });
+            setSentenceNeedsConnection(false);
+        } else {
+            setSentenceDraft(null);
+        }
+
+        // 无 API Key：句子模式仍可手填翻译离线保存
+        if (!apiKey) {
+            if (guessed === 'sentence') setSentenceNeedsConnection(true);
+            return;
+        }
+
+        const seq = ++aiSeqRef.current;
+        if (guessed === 'sentence') setSentenceAiLoading(true); else setAiLoading(true);
+
+        const result = await detectAndAnalyze(
+            text,
+            apiKey,
+            (msg) => { if (seq === aiSeqRef.current) showToast('error', msg); }
+        );
+
+        // 竞态防护：非最新请求直接丢弃，loading 由更新的请求负责收尾
+        if (seq !== aiSeqRef.current) return;
+
+        // 仅当输入框文本仍等于发起时文本才回填，避免「词与释义错配」
+        if (newWordRef.current.word.trim() === text) {
+            if (result && result.inputType === 'word') {
+                // AI 权威：判为单词 → 切到单词表单并回填
+                setInputMode('word');
+                setSentenceDraft(null);
+                ignoreFetch.current = true;
+                setNewWord(prev => ({
+                    ...prev,
+                    language: result.language,
+                    meaning: result.translation,
+                    example: result.example,
+                    exampleCn: result.exampleCn,
+                    category: sanitizeCategory(result.category),
+                    etymology: result.etymology || ''
+                }));
+            } else if (result && result.inputType === 'sentence') {
+                // AI 权威：判为句子 → 填充句子卡片
+                setInputMode('sentence');
+                setSentenceDraft({
+                    language: result.language,
+                    sentence: result.sentence,
+                    translation: result.translation,
+                    keywords: result.keywords ?? [],
+                    grammar: result.grammar ?? [],
+                    register: result.register
+                });
+                setSentenceNeedsConnection(false);
+            } else if (guessed === 'sentence') {
+                // AI 失败且当前处于句子模式：保留原句，提示需联网
+                setSentenceNeedsConnection(true);
             }
         }
+        setAiLoading(false);
+        setSentenceAiLoading(false);
     };
+
+    // 手动切换单词/句子模式：用当前文本重跑对应 AI 调用
+    const handleSwitchInputMode = async (mode: 'word' | 'sentence') => {
+        if (mode === inputMode) return;
+        if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
+        setInputMode(mode);
+        const text = newWord.word.trim();
+
+        if (mode === 'word') {
+            setSentenceDraft(null);
+            setSentenceNeedsConnection(false);
+            setSentenceAiLoading(false);
+            if (!text || !apiKey) return;
+            const seq = ++aiSeqRef.current;
+            setAiLoading(true);
+            const content = await getAIContent(
+                text,
+                newWord.language,
+                apiKey,
+                (msg) => { if (seq === aiSeqRef.current) showToast('error', msg); }
+            );
+            if (seq !== aiSeqRef.current) return;
+            if (content && newWordRef.current.word.trim() === text) {
+                ignoreFetch.current = true;
+                setNewWord(prev => ({
+                    ...prev,
+                    meaning: content.translation || prev.meaning,
+                    example: content.example || '',
+                    exampleCn: content.exampleCn || '',
+                    category: sanitizeCategory(content.category),
+                    etymology: content.etymology || ''
+                }));
+            }
+            setAiLoading(false);
+            setSentenceAiLoading(false);
+        } else {
+            // 切到句子模式：先占位，再跑整句解析
+            setSentenceNeedsConnection(false);
+            setSentenceDraft({ language: newWord.language, sentence: newWord.word, translation: '', keywords: [], grammar: [] });
+            if (!text) return;
+            if (!apiKey) { setSentenceNeedsConnection(true); return; }
+            const seq = ++aiSeqRef.current;
+            setSentenceAiLoading(true);
+            const result = await detectAndAnalyze(
+                text,
+                apiKey,
+                (msg) => { if (seq === aiSeqRef.current) showToast('error', msg); }
+            );
+            if (seq !== aiSeqRef.current) return;
+            if (newWordRef.current.word.trim() === text) {
+                if (result && result.inputType === 'sentence') {
+                    setSentenceDraft({
+                        language: result.language,
+                        sentence: result.sentence,
+                        translation: result.translation,
+                        keywords: result.keywords ?? [],
+                        grammar: result.grammar ?? [],
+                        register: result.register
+                    });
+                } else if (result && result.inputType === 'word') {
+                    // 用户手动指定为句子但 AI 判为单词：保留句子 UI，用可得信息兜底（无重点词/语法点）
+                    setSentenceDraft({ language: result.language, sentence: text, translation: result.translation, keywords: [], grammar: [] });
+                } else {
+                    setSentenceNeedsConnection(true);
+                }
+            }
+            setAiLoading(false);
+            setSentenceAiLoading(false);
+        }
+    };
+
+    // 句子翻译可编辑
+    const handleSentenceTranslationChange = useCallback((value: string) => {
+        setSentenceDraft(prev => (prev ? { ...prev, translation: value } : prev));
+    }, []);
+
+    // 判断某重点词是否已在生词本（大小写不敏感 + 同语言）
+    const isKeywordAdded = useCallback((word: string) => {
+        const draft = sentenceDraft;
+        if (!draft) return false;
+        const target = word.trim().toLowerCase();
+        return words.some(w => w.word.toLowerCase() === target && w.language === draft.language);
+    }, [words, sentenceDraft]);
+
+    // 把重点词加入生词本
+    const handleAddKeyword = useCallback(async (kw: SentenceKeyword) => {
+        const draft = sentenceDraft;
+        if (!draft) return;
+        const trimmed = kw.word.trim();
+        const isDuplicate = words.some(w => w.word.toLowerCase() === trimmed.toLowerCase() && w.language === draft.language);
+        if (isDuplicate) {
+            showToast('info', '已在生词本');
+            return;
+        }
+        await addWord({
+            word: trimmed, // 保留词典原型大小写（德语名词首字母大写不被归一）
+            meaning: kw.meaning,
+            language: draft.language,
+            example: draft.sentence,
+            exampleCn: draft.translation,
+            category: draft.register || 'daily',
+            etymology: '',
+            date: new Date().toLocaleDateString('sv-SE')
+        });
+        showToast('success', '已加入生词本');
+    }, [sentenceDraft, words, addWord, showToast]);
+
+    // 句子卡片的 draft：sentenceDraft 为空时回退到基于当前输入的占位对象。
+    // 用 useMemo 稳定引用，避免每次渲染都新建对象字面量导致 memo(SentenceCard) 失效。
+    const sentenceCardDraft = useMemo<SentenceAnalysis>(
+        () => sentenceDraft ?? { language: newWord.language, sentence: newWord.word, translation: '', keywords: [], grammar: [] },
+        [sentenceDraft, newWord.language, newWord.word]
+    );
+
+    // 朗读句子输入：抽成 useCallback 稳定引用，配合 memo(SentenceCard) 避免每次渲染因新建箭头函数而失效。
+    const handleSpeakSentenceInput = useCallback(() => {
+        const d = sentenceDraft;
+        if (!d || !d.sentence.trim()) return;
+        speakWord(d.sentence, d.language, setSpeakingId, 'input-sentence', apiKey, (key) => setCachedKeys(prev => new Set(prev).add(key)));
+    }, [sentenceDraft, apiKey]);
+
+    // 保存句子输入到收藏
+    const handleSaveSentenceInput = useCallback(async () => {
+        const draft = sentenceDraft;
+        if (!draft) return;
+        const translation = draft.translation.trim();
+        if (!draft.sentence.trim() || !translation) return;
+        const ok = await saveSentence({
+            sentence: draft.sentence,              // 绝不 toLowerCase，原样保留大小写
+            sentenceCn: translation,
+            language: draft.language,
+            scene: sceneFromRegister(draft.register),
+            sourceType: 'input',
+            sourceWords: draft.keywords.map(k => k.word),
+            keywords: draft.keywords,
+            grammar: draft.grammar
+        }, '已保存到收藏');
+        // 仅在保存成功时关闭表单并清空草稿；失败时保留用户手填/AI 生成的整句，供直接重试，不丢草稿
+        if (ok) resetAddForm();
+    }, [sentenceDraft, saveSentence, resetAddForm]);
 
     const handleAddWord = async () => {
         if (!newWord.word.trim() || !newWord.meaning.trim()) return;
 
+        const trimmedWord = newWord.word.trim();
+        // 去重：比较时统一小写归一（英德一致），命中则提示并保持表单打开、不写入
+        const isDuplicate = words.some(w => w.word.toLowerCase() === trimmedWord.toLowerCase() && w.language === newWord.language);
+        if (isDuplicate) {
+            showToast('info', '该单词已存在');
+            return;
+        }
+
         await addWord({
-            word: newWord.word.trim().toLowerCase(),
+            word: trimmedWord, // 保留原大小写（德语名词 Haus 不再被小写化）
             meaning: newWord.meaning.trim(),
             language: newWord.language,
             example: newWord.example.trim(),
@@ -220,8 +466,7 @@ function App() {
             date: new Date().toLocaleDateString('sv-SE')
         });
 
-        setNewWord({ word: '', meaning: '', language: newWord.language, example: '', exampleCn: '', category: '', etymology: '' });
-        setIsAdding(false);
+        resetAddForm();
         setSearchQuery('');
     };
 
@@ -260,12 +505,19 @@ function App() {
         [getGroupedByDate, filteredWords]
     );
 
+    // 收藏句子：语言过滤 + 搜索（复用 debouncedSearchQuery，对原句与中译大小写不敏感）
+    const filteredSavedSentences = useMemo(() =>
+        filterSavedSentences(savedSentences, savedLanguageFilter, debouncedSearchQuery),
+        [savedSentences, savedLanguageFilter, debouncedSearchQuery]
+    );
+
     const formatDate = useCallback((d: string) => {
         const today = new Date().toLocaleDateString('sv-SE');
         const yesterday = new Date(Date.now() - 86400000).toLocaleDateString('sv-SE');
         if (d === today) return '今天';
         if (d === yesterday) return '昨天';
-        return new Date(d).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+        // 按本地时区解析 YYYY-MM-DD，避免 new Date(d) 以 UTC 解析在负时区少显示一天
+        return new Date(d + 'T00:00:00').toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
     }, []);
 
     const getCategoryClass = useCallback((cat: string) => {
@@ -287,7 +539,8 @@ function App() {
         const dates = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
         const lines: string[] = [`# 词汇本`, ``, `> 导出时间：${new Date().toLocaleString('zh-CN')}　共 ${words.length} 词`, ``];
         for (const date of dates) {
-            const label = new Date(date).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+            // 本地时区解析，避免 UTC 偏移（见 formatDate）
+            const label = new Date(date + 'T00:00:00').toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
             lines.push(`## ${label}`, ``);
             for (const w of grouped[date]) {
                 const lang = langLabel[w.language] || w.language;
@@ -400,12 +653,12 @@ function App() {
                 skippedWords.push(item.word);
             } else {
                 newWordsToAdd.push({
-                    word: item.word.toLowerCase(),
+                    word: item.word.trim(), // 保留原大小写（去重比较处已小写归一）
                     meaning: item.meaning,
                     language: activeTab as 'en' | 'de',
                     example: item.sentence,
                     exampleCn: item.sentenceCn,
-                    category: expansionData.sourceWord.category || 'daily',
+                    category: sanitizeCategory(expansionData.sourceWord.category) || 'daily',
                     etymology: `通过"${expansionData.sourceWord.word}"扩展学习 (${item.relationType})`,
                     date: new Date().toLocaleDateString('sv-SE')
                 });
@@ -636,7 +889,7 @@ function App() {
                     <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></div>
                     <input
                         className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-slate-400 dark:focus:border-slate-500 text-slate-800 dark:text-slate-100 transition-colors"
-                        placeholder="搜索单词..."
+                        placeholder={activeTab === 'saved' ? '搜索句子…' : '搜索或输入句子…'}
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
                     />
@@ -741,7 +994,7 @@ function App() {
                                             className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 active:scale-95 transition-all text-sm font-medium"
                                             onClick={() => speakWord(sentenceData.sentence, activeTab, setSpeakingId, 'sentence', apiKey, (key) => setCachedKeys(prev => new Set(prev).add(key)))}
                                         >
-                                            <Icons.Speaker playing={speakingId === 'sentence'} cached={false} /> 朗读
+                                            <Icons.Speaker playing={speakingId === 'sentence'} cached={cachedKeys.has(generateCacheKey(activeTab, sentenceData.sentence))} /> 朗读
                                         </button>
                                         <button
                                             className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg active:scale-95 transition-all text-sm font-medium ${isSentenceSaved(sentenceData.sentence)
@@ -750,7 +1003,7 @@ function App() {
                                                 }`}
                                             onClick={() => {
                                                 if (isSentenceSaved(sentenceData.sentence)) {
-                                                    unsaveSentence(getSavedSentenceId(sentenceData.sentence)!);
+                                                    handleDeleteSentence(getSavedSentenceId(sentenceData.sentence)!);
                                                 } else {
                                                     saveSentence({
                                                         sentence: sentenceData.sentence,
@@ -895,47 +1148,74 @@ function App() {
             {/* Add Form */}
             {isAdding && (
                 <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 mb-6 shadow-sm">
-                    <div className="flex gap-2 mb-4 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-lg w-fit">
-                        <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${newWord.language === 'en' ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`} onClick={() => setNewWord(p => ({ ...p, language: 'en', word: '', meaning: '', example: '', exampleCn: '', category: '', etymology: '' }))}>🇬🇧 英语</button>
-                        <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${newWord.language === 'de' ? 'bg-white dark:bg-slate-600 text-green-600 dark:text-green-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`} onClick={() => setNewWord(p => ({ ...p, language: 'de', word: '', meaning: '', example: '', exampleCn: '', category: '', etymology: '' }))}>🇩🇪 德语</button>
+                    <div className="flex flex-wrap gap-2 mb-4">
+                        {/* 语言开关 */}
+                        <div className="flex gap-2 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-lg w-fit">
+                            <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${newWord.language === 'en' ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`} onClick={() => { setInputMode('word'); setSentenceDraft(null); setSentenceNeedsConnection(false); setNewWord(p => ({ ...p, language: 'en', word: '', meaning: '', example: '', exampleCn: '', category: '', etymology: '' })); }}>🇬🇧 英语</button>
+                            <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${newWord.language === 'de' ? 'bg-white dark:bg-slate-600 text-green-600 dark:text-green-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`} onClick={() => { setInputMode('word'); setSentenceDraft(null); setSentenceNeedsConnection(false); setNewWord(p => ({ ...p, language: 'de', word: '', meaning: '', example: '', exampleCn: '', category: '', etymology: '' })); }}>🇩🇪 德语</button>
+                        </div>
+                        {/* 单词 / 句子 分段开关 */}
+                        <div className="flex gap-2 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-lg w-fit">
+                            <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${inputMode === 'word' ? 'bg-white dark:bg-slate-600 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`} onClick={() => handleSwitchInputMode('word')}>单词</button>
+                            <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${inputMode === 'sentence' ? 'bg-white dark:bg-slate-600 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`} onClick={() => handleSwitchInputMode('sentence')}>句子</button>
+                        </div>
                     </div>
                     <input
                         ref={inputRef}
                         className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-slate-400 dark:focus:border-slate-500 mb-2 text-slate-800 dark:text-slate-100 font-medium"
-                        placeholder="输入单词或短语"
+                        placeholder="输入单词、短语或句子"
                         value={newWord.word}
                         onChange={e => setNewWord(p => ({ ...p, word: e.target.value }))}
                     />
-                    {aiLoading ? (
-                        <>
-                            <div className="h-10 bg-gradient-to-r from-slate-100 via-slate-50 to-slate-100 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 animate-pulse rounded-lg flex items-center px-3 text-sm text-slate-400 gap-2 mb-2"><Icons.Sparkles /> GPT 分析中...</div>
-                            <div className="h-16 bg-gradient-to-r from-slate-100 via-slate-50 to-slate-100 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 animate-pulse rounded-lg mb-2"></div>
-                        </>
+                    {inputMode === 'sentence' ? (
+                        <SentenceCard
+                            draft={sentenceCardDraft}
+                            loading={sentenceAiLoading}
+                            needsConnection={sentenceNeedsConnection}
+                            speaking={speakingId === 'input-sentence'}
+                            cached={cachedKeys.has(generateCacheKey(sentenceDraft?.language ?? newWord.language, sentenceDraft?.sentence ?? newWord.word))}
+                            saving={savingId === (sentenceDraft?.sentence ?? '')}
+                            onSpeak={handleSpeakSentenceInput}
+                            onTranslationChange={handleSentenceTranslationChange}
+                            onAddKeyword={handleAddKeyword}
+                            isKeywordAdded={isKeywordAdded}
+                            onSave={handleSaveSentenceInput}
+                            onCancel={resetAddForm}
+                        />
                     ) : (
                         <>
-                            <div className="relative mb-2">
-                                <input
-                                    className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-slate-400 dark:focus:border-slate-500 text-slate-800 dark:text-slate-100"
-                                    placeholder="中文翻译"
-                                    value={newWord.meaning}
-                                    onChange={e => setNewWord(p => ({ ...p, meaning: e.target.value }))}
-                                />
-                                {newWord.meaning && <div className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-500"><Icons.Sparkles /></div>}
-                            </div>
-                            {newWord.example && (
-                                <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 mb-4">
-                                    <div className="text-sm text-slate-700 dark:text-slate-300 mb-1">{newWord.example}</div>
-                                    <div className="text-xs text-slate-500 dark:text-slate-400">{newWord.exampleCn}</div>
-                                </div>
+                            {aiLoading ? (
+                                <>
+                                    <div className="h-10 bg-gradient-to-r from-slate-100 via-slate-50 to-slate-100 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 animate-pulse rounded-lg flex items-center px-3 text-sm text-slate-400 gap-2 mb-2"><Icons.Sparkles /> GPT 分析中...</div>
+                                    <div className="h-16 bg-gradient-to-r from-slate-100 via-slate-50 to-slate-100 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 animate-pulse rounded-lg mb-2"></div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="relative mb-2">
+                                        <input
+                                            className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-slate-400 dark:focus:border-slate-500 text-slate-800 dark:text-slate-100"
+                                            placeholder="中文翻译"
+                                            value={newWord.meaning}
+                                            onChange={e => setNewWord(p => ({ ...p, meaning: e.target.value }))}
+                                        />
+                                        {newWord.meaning && <div className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-500"><Icons.Sparkles /></div>}
+                                    </div>
+                                    {newWord.example && (
+                                        <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 mb-4">
+                                            <div className="text-sm text-slate-700 dark:text-slate-300 mb-1">{newWord.example}</div>
+                                            <div className="text-xs text-slate-500 dark:text-slate-400">{newWord.exampleCn}</div>
+                                        </div>
+                                    )}
+                                </>
                             )}
+                            <div className="flex gap-2">
+                                <button className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200 active:scale-95 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed" onClick={handleAddWord} disabled={!newWord.word.trim() || !newWord.meaning.trim() || aiLoading || syncing}>
+                                    {syncing ? '保存中...' : '保存'}
+                                </button>
+                                <button className="px-4 py-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors font-medium" onClick={resetAddForm}>取消</button>
+                            </div>
                         </>
                     )}
-                    <div className="flex gap-2">
-                        <button className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200 active:scale-95 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed" onClick={handleAddWord} disabled={!newWord.word.trim() || !newWord.meaning.trim() || aiLoading || syncing}>
-                            {syncing ? '保存中...' : '保存'}
-                        </button>
-                        <button className="px-4 py-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors font-medium" onClick={() => { setIsAdding(false); setNewWord({ word: '', meaning: '', language: 'en', example: '', exampleCn: '', category: '', etymology: '' }); }}>取消</button>
-                    </div>
                 </div>
             )}
 
@@ -943,23 +1223,52 @@ function App() {
             {activeTab === 'saved' ? (
                 <div>
                     {savedSentences.length === 0 ? (
+                        // 完全没有收藏
                         <div className="text-center py-16">
                             <div className="text-6xl text-slate-200 dark:text-slate-700 mb-4">⭐</div>
                             <div className="text-slate-500 font-medium mb-1">还没有收藏的句子</div>
                             <div className="text-sm text-slate-400">收藏你喜欢的例句和组合造句吧</div>
                         </div>
                     ) : (
-                        <div className="space-y-0">
-                            {savedSentences.map(s => (
-                                <SwipeableSentenceCard
-                                    key={s.id}
-                                    sentence={s}
-                                    onDelete={() => handleDeleteSentence(s.id)}
-                                    onSpeak={() => speakWord(s.sentence, s.language, setSpeakingId, s.id, apiKey, (key) => setCachedKeys(prev => new Set(prev).add(key)))}
-                                    speakingId={speakingId}
-                                />
-                            ))}
-                        </div>
+                        <>
+                            {/* 语言过滤 pills（样式对齐主 tab pills） */}
+                            <div className="flex gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl mb-4">
+                                {[{ id: 'all' as const, label: '全部' }, { id: 'en' as const, label: '🇬🇧 英语' }, { id: 'de' as const, label: '🇩🇪 德语' }].map(f => (
+                                    <button
+                                        key={f.id}
+                                        className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${savedLanguageFilter === f.id
+                                            ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm'
+                                            : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                                            }`}
+                                        onClick={() => setSavedLanguageFilter(f.id)}
+                                    >
+                                        {f.label}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {filteredSavedSentences.length === 0 ? (
+                                // 有收藏但当前过滤条件无匹配
+                                <div className="text-center py-16">
+                                    <div className="text-6xl text-slate-200 dark:text-slate-700 mb-4">🔍</div>
+                                    <div className="text-slate-500 font-medium mb-1">无匹配结果</div>
+                                    <div className="text-sm text-slate-400">换个搜索词或语言筛选试试</div>
+                                </div>
+                            ) : (
+                                <div className="space-y-0">
+                                    {filteredSavedSentences.map(s => (
+                                        <SwipeableSentenceCard
+                                            key={s.id}
+                                            sentence={s}
+                                            onDelete={() => handleDeleteSentence(s.id)}
+                                            onSpeak={() => speakWord(s.sentence, s.language, setSpeakingId, s.id, apiKey, (key) => setCachedKeys(prev => new Set(prev).add(key)))}
+                                            speakingId={speakingId}
+                                            cached={cachedKeys.has(generateCacheKey(s.language, s.sentence))}
+                                        />
+                                    ))}
+                                </div>
+                            )}
+                        </>
                     )}
                 </div>
             ) : Object.keys(groupedByDate).length === 0 ? (
@@ -984,7 +1293,7 @@ function App() {
                     handleRegenerate={handleRegenerate}
                     regeneratingId={regeneratingId}
                     saveSentence={saveSentence}
-                    unsaveSentence={unsaveSentence}
+                    deleteSentence={handleDeleteSentence}
                     isSentenceSaved={isSentenceSaved}
                     getSavedSentenceId={getSavedSentenceId}
                     savingId={savingId}

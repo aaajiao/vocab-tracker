@@ -78,8 +78,10 @@ CREATE TABLE IF NOT EXISTS public.saved_sentences (
     sentence_cn   text,
     language      character varying NOT NULL CHECK (language::text = ANY (ARRAY['en'::character varying, 'de'::character varying]::text[])),
     scene         character varying,
-    source_type   character varying NOT NULL CHECK (source_type::text = ANY (ARRAY['combined'::character varying, 'word'::character varying]::text[])),
+    source_type   character varying NOT NULL CHECK (source_type::text = ANY (ARRAY['combined'::character varying, 'word'::character varying, 'input'::character varying]::text[])),
     source_words  jsonb DEFAULT '[]'::jsonb,
+    keywords      jsonb DEFAULT '[]'::jsonb,
+    grammar       jsonb DEFAULT '[]'::jsonb,
     created_at    timestamp with time zone DEFAULT now(),
     CONSTRAINT saved_sentences_pkey PRIMARY KEY (id),
     CONSTRAINT saved_sentences_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)

@@ -20,3 +20,4 @@
 |---|---|---|
 | 2026-05-13 | `2026-05-13_01_grants_migration.sql` | 为 `words` / `saved_sentences` 显式补 GRANT，应对 Supabase 2026-10-30 起对 public schema 默认权限的强制变更 |
 | 2026-05-13 | `2026-05-13_02_revoke_anon.sql` | 收紧 anon 角色权限，移除两表上 anon 的全部 grant（应用不需要匿名访问业务数据） |
+| 2026-07-07 | `2026-07-07_01_sentence_input.sql` | 句子输入支持：放宽 `saved_sentences.source_type` CHECK（新增 `input`），新增 `keywords` / `grammar` jsonb 列。⚠️ 必须先执行本迁移再部署前端 |

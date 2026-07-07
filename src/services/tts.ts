@@ -5,6 +5,23 @@ import { getCachedAudio, setCachedAudio, generateCacheKey } from './audioCache';
 // Memory cache for current session (Blob URLs)
 const sessionCache = new Map<string, string>();
 
+// 当前正在播放的 Audio 引用，用于打断上一段播放（避免叠音）
+let currentAudio: HTMLAudioElement | null = null;
+// 打断当前播放的回调：由 playAudio 注册，stopCurrentPlayback 调用
+let stopCurrentAudio: (() => void) | null = null;
+// 播放令牌：每次新的 speakWord 递增，用于识别过期回调，避免旧播放清掉新指示
+let playbackToken = 0;
+
+// 停止当前正在播放的音频与浏览器语音合成
+function stopCurrentPlayback(): void {
+    if (stopCurrentAudio) {
+        stopCurrentAudio();
+    }
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+    }
+}
+
 // OpenAI Text-to-Speech with persistent IndexedDB caching
 export async function speakWord(
     text: string,
@@ -14,6 +31,11 @@ export async function speakWord(
     apiKey: string,
     onCacheUpdate?: (key: string) => void
 ): Promise<void> {
+    // 先打断上一段播放，避免叠音
+    stopCurrentPlayback();
+    // 认领本次播放令牌；后续所有清除指示的操作都要校验令牌是否仍然有效
+    const token = ++playbackToken;
+    const isCurrent = () => token === playbackToken;
     setSpeakingId(wordId);
 
     // Cache key
@@ -31,25 +53,60 @@ export async function speakWord(
     };
 
     // Play audio from URL
-    const playAudio = async (url: string): Promise<boolean> => {
-        try {
+    // 返回 'ended'（正常播放结束）、'failed'（播放出错）或 'interrupted'（被新的播放打断）
+    const playAudio = (url: string): Promise<'ended' | 'failed' | 'interrupted'> => {
+        return new Promise((resolve) => {
             const audio = new Audio(url);
-            await new Promise<void>((resolve, reject) => {
-                audio.onended = () => resolve();
-                audio.onerror = () => reject(new Error('Playback error'));
-                audio.play().catch(reject);
+            currentAudio = audio;
+            let settled = false;
+
+            const cleanup = () => {
+                audio.onended = null;
+                audio.onerror = null;
+                // 仅当仍是当前音频时才清空模块级引用（避免误清新播放的引用）
+                if (currentAudio === audio) {
+                    currentAudio = null;
+                    stopCurrentAudio = null;
+                }
+            };
+
+            // 被新的 speakWord 打断时调用：暂停旧音频并以 'interrupted' 结束
+            stopCurrentAudio = () => {
+                if (settled) return;
+                settled = true;
+                audio.pause();
+                audio.currentTime = 0;
+                cleanup();
+                resolve('interrupted');
+            };
+
+            audio.onended = () => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                resolve('ended');
+            };
+            audio.onerror = () => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                resolve('failed');
+            };
+            audio.play().catch(() => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                resolve('failed');
             });
-            return true;
-        } catch {
-            return false;
-        }
+        });
     };
 
     // 1. Check session cache (fastest - already have blob URL)
     if (sessionCache.has(cacheKey)) {
-        const played = await playAudio(sessionCache.get(cacheKey)!);
-        if (played) {
-            setSpeakingId(null);
+        const result = await playAudio(sessionCache.get(cacheKey)!);
+        if (result === 'interrupted') return; // 已被新的播放接管，不要触碰指示
+        if (result === 'ended') {
+            if (isCurrent()) setSpeakingId(null);
             return;
         }
         sessionCache.delete(cacheKey); // Clear bad cache
@@ -61,10 +118,13 @@ export async function speakWord(
         if (cachedBlob) {
             const url = URL.createObjectURL(cachedBlob);
             sessionCache.set(cacheKey, url); // Add to session cache
-            const played = await playAudio(url);
-            if (played) {
+            // 已被更新的 speakWord 接管（IndexedDB 读取期间用户点了别的词）：只写缓存，不开声，避免叠音
+            if (!isCurrent()) return;
+            const result = await playAudio(url);
+            if (result === 'interrupted') return;
+            if (result === 'ended') {
                 if (onCacheUpdate) onCacheUpdate(cacheKey);
-                setSpeakingId(null);
+                if (isCurrent()) setSpeakingId(null);
                 return;
             }
         }
@@ -74,8 +134,9 @@ export async function speakWord(
 
     // 3. If no API key, use browser TTS
     if (!apiKey) {
+        if (!isCurrent()) return;
         useBrowserTTS();
-        setSpeakingId(null);
+        if (isCurrent()) setSpeakingId(null);
         return;
     }
 
@@ -121,8 +182,10 @@ export async function speakWord(
 
         retries++;
         if (retries > maxRetries) {
-            useBrowserTTS();
-            setSpeakingId(null);
+            if (isCurrent()) {
+                useBrowserTTS();
+                setSpeakingId(null);
+            }
             return;
         }
     }
@@ -130,8 +193,10 @@ export async function speakWord(
     // 5. Process response and cache
     try {
         if (!response) {
-            useBrowserTTS();
-            setSpeakingId(null);
+            if (isCurrent()) {
+                useBrowserTTS();
+                setSpeakingId(null);
+            }
             return;
         }
 
@@ -146,15 +211,18 @@ export async function speakWord(
         if (onCacheUpdate) onCacheUpdate(cacheKey);
 
         // Play
-        const played = await playAudio(audioUrl);
-        if (!played) {
+        // 已被更新的 speakWord 接管（fetch/重试期间用户点了别的词）：只写缓存，不开声，避免叠音
+        if (!isCurrent()) return;
+        const result = await playAudio(audioUrl);
+        if (result === 'interrupted') return; // 已被新的播放接管
+        if (result === 'failed' && isCurrent()) {
             useBrowserTTS();
         }
     } catch (e) {
         console.error('Final TTS processing error:', e);
-        useBrowserTTS();
+        if (isCurrent()) useBrowserTTS();
     }
-    setSpeakingId(null);
+    if (isCurrent()) setSpeakingId(null);
 }
 
 // Re-export cache functions for use elsewhere

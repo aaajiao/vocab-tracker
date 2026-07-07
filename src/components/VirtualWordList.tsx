@@ -1,8 +1,9 @@
 import { useRef, memo, useState, useMemo, useCallback } from 'react';
-import { useWindowVirtualizer } from '@tanstack/react-virtual';
+import type { VirtualWordListProps, Word } from '../types';
 import SwipeableCard from './SwipeableCard';
 import { Icons } from './Icons';
-import type { VirtualWordListProps, Word } from '../types';
+import { useWindowVirtualizer } from '@tanstack/react-virtual';
+import { generateCacheKey } from '../services/audioCache';
 
 interface FlatListItem {
     type: 'header' | 'word';
@@ -24,7 +25,7 @@ function VirtualWordList({
     groupedByDate, formatDate, deleteWord, speakWord, setSpeakingId,
     speakingId, apiKey, setCachedKeys, cachedKeys, getCategoryClass,
     getCategoryLabel, handleRegenerate, regeneratingId,
-    saveSentence, unsaveSentence, isSentenceSaved, getSavedSentenceId, savingId
+    saveSentence, deleteSentence, isSentenceSaved, getSavedSentenceId, savingId
 }: VirtualWordListProps) {
     const listRef = useRef<HTMLDivElement>(null);
     const [expandedEtymology, setExpandedEtymology] = useState<Set<string>>(() => new Set());
@@ -121,6 +122,9 @@ function VirtualWordList({
                     }
 
                     const word = item as unknown as Word;
+                    // 缓存 key 必须与 audioCache.generateCacheKey 生成的一致（如 en_hello），
+                    // 否则「已缓存」喇叭指示永远不会亮
+                    const wordCacheKey = generateCacheKey(word.language, word.word);
                     return (
                         <div
                             key={word.id}
@@ -146,8 +150,8 @@ function VirtualWordList({
                                     {word.category && <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getCategoryClass(word.category)}`}>{getCategoryLabel(word.category)}</span>}
                                     <span className="text-lg font-bold text-slate-800 dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer inline-flex items-center gap-1 transition-colors" onClick={() => speakWord(word.word, word.language, setSpeakingId, word.id, apiKey, (key) => setCachedKeys(prev => new Set(prev).add(key)))}>
                                         {word.word}
-                                        <button className={`p-1.5 rounded-full hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 active:scale-90 transition-all ${speakingId === word.id ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/30 animate-pulse-ring' : (cachedKeys.has(`${word.language}:${word.word}`) ? 'text-blue-400/80 dark:text-blue-400/60' : 'text-slate-400')}`}>
-                                            <Icons.Speaker playing={speakingId === word.id} cached={cachedKeys.has(`${word.language}:${word.word}`)} />
+                                        <button className={`p-1.5 rounded-full hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 active:scale-90 transition-all ${speakingId === word.id ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/30 animate-pulse-ring' : (cachedKeys.has(wordCacheKey) ? 'text-blue-400/80 dark:text-blue-400/60' : 'text-slate-400')}`}>
+                                            <Icons.Speaker playing={speakingId === word.id} cached={cachedKeys.has(wordCacheKey)} />
                                         </button>
                                     </span>
                                 </div>
@@ -185,7 +189,7 @@ function VirtualWordList({
                                                 className={`p-2 rounded-lg active:scale-90 transition-all ${isSentenceSaved(word.example) ? 'text-amber-500' : 'text-slate-300 dark:text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30'}`}
                                                 onClick={() => {
                                                     if (isSentenceSaved(word.example)) {
-                                                        unsaveSentence(getSavedSentenceId(word.example)!);
+                                                        deleteSentence(getSavedSentenceId(word.example)!);
                                                     } else {
                                                         saveSentence({
                                                             sentence: word.example,

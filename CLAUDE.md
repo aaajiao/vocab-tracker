@@ -67,8 +67,8 @@ Dev server proxies `/api/openai` → `https://api.openai.com` (configured in `vi
 ### Supabase Schema
 
 Two tables with Row Level Security (user can only access own data):
-- `words` — id, user_id, word, meaning, language ('en'|'de'), example, example_cn, category ('daily'|'professional'|'formal'|''), date, created_at, etymology. PK: id. FK: user_id → auth.users(id) (no ON DELETE CASCADE). No UNIQUE constraint — dedup is enforced client-side via lowercase normalization.
-- `saved_sentences` — id, user_id, sentence, sentence_cn, language, scene, source_type ('word'|'combined'), source_words (JSONB array), created_at. PK: id. FK: user_id → auth.users(id) (no ON DELETE CASCADE).
+- `words` — id, user_id, word, meaning, language ('en'|'de'), example, example_cn, category ('daily'|'professional'|'formal'|''), date, created_at, etymology. PK: id. FK: user_id → auth.users(id) (no ON DELETE CASCADE). No UNIQUE constraint — dedup is enforced client-side by lowercase-normalizing only the comparison; the stored word preserves its original casing (e.g. German nouns like "Haus").
+- `saved_sentences` — id, user_id, sentence, sentence_cn, language, scene, source_type ('word'|'combined'|'input'), source_words (JSONB array), keywords (JSONB array — 句子输入的重点词 `{word,meaning,partOfSpeech?}`), grammar (JSONB array — 句子输入的语法点 `{point,explanation}`), created_at. PK: id. FK: user_id → auth.users(id) (no ON DELETE CASCADE).
 
 Both tables: `anon` role has no grants (defense in depth). Only `authenticated` and `service_role` can access via Data API.
 

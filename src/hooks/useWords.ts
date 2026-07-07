@@ -4,6 +4,9 @@ import type { Word } from '../types';
 import { deleteCachedAudio, generateCacheKey } from '../services/audioCache';
 import {
     getAllCachedWords,
+    getPendingAddWords,
+    mergePendingAdds,
+    selectWordsToMigrate,
     setCachedWords,
     addPendingWord,
     markWordDeleted,
@@ -23,6 +26,22 @@ interface SupabaseWordRow {
     etymology: string | null;
     date: string;
     created_at: string;
+}
+
+// 将 Supabase 行映射为内部 Word（三处加载逻辑共用）
+function formatWordRow(w: SupabaseWordRow): Word {
+    return {
+        id: w.id,
+        word: w.word,
+        meaning: w.meaning,
+        language: w.language,
+        example: w.example || '',
+        exampleCn: w.example_cn || '',
+        category: (w.category || '') as Word['category'],
+        etymology: w.etymology || '',
+        date: w.date,
+        timestamp: new Date(w.created_at).getTime()
+    };
 }
 
 interface UseWordsProps {
@@ -83,25 +102,17 @@ export function useWords({ userId, isOnline = true, onLoadComplete, showToast, o
                         showToast?.('error', '加载词汇失败');
                     }
                 } else {
-                    const formatted: Word[] = (data || []).map((w: SupabaseWordRow) => ({
-                        id: w.id,
-                        word: w.word,
-                        meaning: w.meaning,
-                        language: w.language,
-                        example: w.example || '',
-                        exampleCn: w.example_cn || '',
-                        category: (w.category || '') as Word['category'],
-                        etymology: w.etymology || '',
-                        date: w.date,
-                        timestamp: new Date(w.created_at).getTime()
-                    }));
-                    setWords(formatted);
+                    const formatted: Word[] = (data || []).map(formatWordRow);
 
-                    // Update cache with server data
+                    // 合并本地 pending_add（离线新增、尚未同步）项，避免整体覆盖内存后离线词从 UI 消失
+                    const pendingAdds = await getPendingAddWords();
+                    setWords(mergePendingAdds(formatted, pendingAdds));
+
+                    // Update cache with server data（setCachedWords 内部会保留 pending 项）
                     await setCachedWords(formatted);
 
-                    // Migrate localStorage if needed
-                    await migrateLocalStorage(userId);
+                    // Migrate localStorage if needed（传入服务器词汇用于去重）
+                    await migrateLocalStorage(userId, formatted);
                 }
             } else if (cachedWords.length === 0) {
                 showToast?.('info', '离线模式 · 无缓存数据');
@@ -125,79 +136,92 @@ export function useWords({ userId, isOnline = true, onLoadComplete, showToast, o
             .order('created_at', { ascending: false });
 
         if (!error && data) {
-            const formatted: Word[] = data.map((w: SupabaseWordRow) => ({
-                id: w.id,
-                word: w.word,
-                meaning: w.meaning,
-                language: w.language,
-                example: w.example || '',
-                exampleCn: w.example_cn || '',
-                category: (w.category || '') as Word['category'],
-                etymology: w.etymology || '',
-                date: w.date,
-                timestamp: new Date(w.created_at).getTime()
-            }));
-            setWords(formatted);
+            const formatted: Word[] = data.map(formatWordRow);
+            // 合并本地 pending_add 项：同步失败时仍保留未同步词，不必等冷启动才复现
+            const pendingAdds = await getPendingAddWords();
+            setWords(mergePendingAdds(formatted, pendingAdds));
             await setCachedWords(formatted);
         }
     }, [userId, isOnline]);
 
-    const migrateLocalStorage = async (uid: string) => {
+    // 迁移 localStorage 旧数据到云端。
+    // 返回 true 表示全部成功（或无需迁移），false 表示有失败——此时保留 localStorage 供下次重试，
+    // 且不弹成功提示。words 表无 UNIQUE 约束，故用 insert 而非 upsert，并先按服务器数据去重。
+    const migrateLocalStorage = async (uid: string, serverWords: Word[]): Promise<boolean> => {
         const localData = localStorage.getItem('vocab-words-v4');
-        if (!localData) return;
+        if (!localData) return true;
 
+        let localWords: Word[];
         try {
-            const localWords = JSON.parse(localData);
-            if (localWords.length === 0) return;
-
-            setSyncing(true);
-            showToast?.('info', `正在迁移 ${localWords.length} 个本地词汇...`);
-
-            for (const w of localWords) {
-                await supabase.from('words').upsert({
-                    user_id: uid,
-                    word: w.word,
-                    meaning: w.meaning,
-                    language: w.language,
-                    example: w.example,
-                    example_cn: w.exampleCn,
-                    category: (w.category || '') as Word['category'],
-                    date: w.date
-                }, { onConflict: 'user_id,word,language' });
-            }
-
-            // Reload after migration
-            const { data } = await supabase
-                .from('words')
-                .select('*')
-                .eq('user_id', uid)
-                .order('created_at', { ascending: false });
-
-            if (data) {
-                const formatted = data.map((w: SupabaseWordRow) => ({
-                    id: w.id,
-                    word: w.word,
-                    meaning: w.meaning,
-                    language: w.language,
-                    example: w.example || '',
-                    exampleCn: w.example_cn || '',
-                    category: (w.category || '') as Word['category'],
-                    etymology: w.etymology || '',
-                    date: w.date,
-                    timestamp: new Date(w.created_at).getTime()
-                }));
-                setWords(formatted);
-                await setCachedWords(formatted);
-            }
-
-            localStorage.removeItem('vocab-words-v4');
-            showToast?.('success', `已迁移 ${localWords.length} 个词汇到云端`);
-            setSyncing(false);
+            localWords = JSON.parse(localData) as Word[];
         } catch (e) {
-            console.error('Migration failed:', e);
-            showToast?.('error', '迁移失败');
-            setSyncing(false);
+            console.error('Migration parse failed:', e);
+            return false;
         }
+        if (!Array.isArray(localWords) || localWords.length === 0) return true;
+
+        // 去重：筛掉服务器已存在（大小写不敏感 word+language）以及本地内部重复的词
+        const toMigrate = selectWordsToMigrate(localWords, serverWords);
+        if (toMigrate.length === 0) {
+            // 全部已在云端，安全清空本地
+            localStorage.removeItem('vocab-words-v4');
+            return true;
+        }
+
+        setSyncing(true);
+        showToast?.('info', `正在迁移 ${toMigrate.length} 个本地词汇...`);
+
+        let allSucceeded = true;
+        let migratedCount = 0;
+
+        for (const w of toMigrate) {
+            const { error } = await supabase.from('words').insert({
+                user_id: uid,
+                word: w.word,
+                meaning: w.meaning,
+                language: w.language,
+                example: w.example,
+                example_cn: w.exampleCn,
+                category: (w.category || '') as Word['category'],
+                date: w.date
+            });
+
+            if (error) {
+                console.error('Migration insert failed:', w.word, error);
+                allSucceeded = false;
+                // 继续尝试其余词，但保留 localStorage
+            } else {
+                migratedCount++;
+            }
+        }
+
+        // Reload after migration（合并 pending_add，避免覆盖离线新增词）
+        const { data } = await supabase
+            .from('words')
+            .select('*')
+            .eq('user_id', uid)
+            .order('created_at', { ascending: false });
+
+        if (data) {
+            const formatted = data.map(formatWordRow);
+            const pendingAdds = await getPendingAddWords();
+            setWords(mergePendingAdds(formatted, pendingAdds));
+            await setCachedWords(formatted);
+        }
+
+        if (allSucceeded) {
+            localStorage.removeItem('vocab-words-v4');
+            if (migratedCount > 0) {
+                showToast?.('success', `已迁移 ${migratedCount} 个词汇到云端`);
+            }
+        } else {
+            // 保留 localStorage 供下次重试，不弹成功提示
+            console.error('Migration incomplete; localStorage retained for retry');
+            showToast?.('error', '部分词汇迁移失败，已保留本地数据稍后重试');
+        }
+
+        setSyncing(false);
+        return allSucceeded;
     };
 
     const addWord = useCallback(async (newWord: Omit<Word, 'id' | 'timestamp'>, options?: { silent?: boolean }) => {
@@ -344,7 +368,13 @@ export function useWords({ userId, isOnline = true, onLoadComplete, showToast, o
         // Optimistic update
         setWords(prev => prev.filter(w => w.id !== id));
 
-        if (isOnline) {
+        if (id.startsWith('temp_')) {
+            // 该词仍是离线新增、尚未同步（temp id），服务器上并无对应行。
+            // 走离线取消路径：删除本地记录并撤销待同步的新增操作；不向服务器发起删除，
+            // 否则 delete().eq('id', temp_id) 会匹配 0 行被误判为成功，随后同步又插入真实行导致「删除的词复活」。
+            await markWordDeleted(id);
+            onPendingChange?.();
+        } else if (isOnline) {
             // Online: delete from Supabase
             const { error } = await supabase.from('words').delete().eq('id', id);
             if (error) {

@@ -54,7 +54,24 @@ export const TABS = [
 export type TabId = 'all' | 'en' | 'de' | 'saved';
 
 // ==================== Sentence Source Types ====================
-export const SOURCE_TYPES = {
+// 收藏句子来源类型的展示文案（含用户直接输入的句子 input）
+export const SOURCE_TYPE_LABELS = {
+    combined: '组合造句',
     word: '单词例句',
-    combined: '组合造句'
+    input: '我的句子'
 } as const;
+
+// 句子输入的语域(register) → 收藏时 scene 字段的中文标签。
+// 复用 CATEGORY_CONFIG 的中文标签（日常/专业/正式），非法或缺省时返回 null。
+export function sceneFromRegister(register?: 'daily' | 'professional' | 'formal' | null): string | null {
+    if (register === 'daily' || register === 'professional' || register === 'formal') {
+        return CATEGORY_CONFIG[register].label;
+    }
+    return null;
+}
+
+// ==================== Sentence Heuristic Thresholds ====================
+// classifyInput 用的 token 阈值（见 src/services/inputHeuristic.ts）
+export const SENTENCE_MIN_TOKENS = 5;        // token 数 >= 5 直接判句子
+export const SENTENCE_PUNCT_MIN_TOKENS = 3;  // 含句末标点时，token 数 >= 3 判句子
+export const SENTENCE_COMMA_MIN_TOKENS = 4;  // 含逗号时，token 数 >= 4 判句子

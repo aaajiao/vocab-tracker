@@ -27,4 +27,13 @@ describe('generateCacheKey', () => {
         expect(a).toBe(b);
         expect(b).toBe(c);
     });
+
+    it('不同于旧的冒号分隔查找 key（「已缓存」喇叭指示回归）', () => {
+        // VirtualWordList 曾用 `${language}:${word}`（如 en:Hello）查找缓存，
+        // 与 generateCacheKey 的输出（en_hello）永不匹配，导致喇叭永远不亮。
+        // 锁定唯一正确的 key 格式，读写两端都必须走 generateCacheKey。
+        const key = generateCacheKey('en', 'Hello');
+        expect(key).toBe('en_hello');
+        expect(key).not.toBe('en:Hello');
+    });
 });

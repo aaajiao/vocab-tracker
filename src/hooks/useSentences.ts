@@ -6,7 +6,8 @@ import {
     getAllCachedSentences,
     setCachedSentences,
     addPendingSentence,
-    markSentenceDeleted
+    markSentenceDeleted,
+    withSentenceDefaults
 } from '../services/sentencesCache';
 
 interface UseSentencesProps {
@@ -19,7 +20,7 @@ interface UseSentencesProps {
 interface UseSentencesReturn {
     savedSentences: SavedSentence[];
     savingId: string | null;
-    saveSentence: (sentenceObj: SentenceInput) => Promise<void>;
+    saveSentence: (sentenceObj: SentenceInput, successMessage?: string) => Promise<boolean>;
     unsaveSentence: (id: string) => Promise<SavedSentence | null>;
     restoreSentence: (sentence: SavedSentence) => Promise<void>;
     isSentenceSaved: (sentence: string) => boolean;
@@ -51,8 +52,10 @@ export function useSentences({ userId, isOnline = true, showToast, onPendingChan
                     .order('created_at', { ascending: false });
 
                 if (!error && data) {
-                    setSavedSentences(data);
-                    await setCachedSentences(data);
+                    // 老数据可能缺 keywords/grammar 列，读回统一兜底为空数组
+                    const normalized = (data as SavedSentence[]).map(withSentenceDefaults);
+                    setSavedSentences(normalized);
+                    await setCachedSentences(normalized);
                 }
             }
         };
@@ -71,18 +74,22 @@ export function useSentences({ userId, isOnline = true, showToast, onPendingChan
             .order('created_at', { ascending: false });
 
         if (!error && data) {
-            setSavedSentences(data);
-            await setCachedSentences(data);
+            const normalized = (data as SavedSentence[]).map(withSentenceDefaults);
+            setSavedSentences(normalized);
+            await setCachedSentences(normalized);
         }
     }, [userId, isOnline]);
 
-    const saveSentence = useCallback(async (sentenceObj: SentenceInput) => {
-        if (!userId) return;
+    // 返回 true 表示保存成功（在线插入成功 / 离线已入队），false 表示在线插入失败。
+    // 调用方据此决定是否关闭表单、清空草稿——失败时保留草稿供用户重试，不丢用户输入。
+    const saveSentence = useCallback(async (sentenceObj: SentenceInput, successMessage: string = '已收藏'): Promise<boolean> => {
+        if (!userId) return false;
         setSavingId(sentenceObj.sentence);
 
         // Generate temp ID for offline use
         const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
         const now = new Date().toISOString();
+        let success = false;
 
         if (isOnline) {
             const { data, error } = await supabase.from('saved_sentences').insert({
@@ -92,14 +99,18 @@ export function useSentences({ userId, isOnline = true, showToast, onPendingChan
                 language: sentenceObj.language,
                 scene: sentenceObj.scene || null,
                 source_type: sentenceObj.sourceType,
-                source_words: sentenceObj.sourceWords || []
+                source_words: sentenceObj.sourceWords || [],
+                keywords: sentenceObj.keywords || [],
+                grammar: sentenceObj.grammar || []
             }).select();
 
             if (!error && data) {
-                setSavedSentences(prev => [data[0], ...prev]);
+                const saved = withSentenceDefaults(data[0] as SavedSentence);
+                setSavedSentences(prev => [saved, ...prev]);
                 const allSentences = await getAllCachedSentences();
-                await setCachedSentences([data[0], ...allSentences]);
-                showToast?.('success', '已收藏');
+                await setCachedSentences([saved, ...allSentences]);
+                showToast?.('success', successMessage);
+                success = true;
             } else {
                 showToast?.('error', '收藏失败');
             }
@@ -113,15 +124,19 @@ export function useSentences({ userId, isOnline = true, showToast, onPendingChan
                 scene: sentenceObj.scene || null,
                 source_type: sentenceObj.sourceType,
                 source_words: sentenceObj.sourceWords || [],
+                keywords: sentenceObj.keywords || [],
+                grammar: sentenceObj.grammar || [],
                 created_at: now
             };
             setSavedSentences(prev => [offlineSentence, ...prev]);
             await addPendingSentence(offlineSentence);
             onPendingChange?.();
             showToast?.('info', '已离线收藏，稍后同步');
+            success = true;
         }
 
         setSavingId(null);
+        return success;
     }, [userId, isOnline, showToast, onPendingChange]);
 
     const unsaveSentence = useCallback(async (id: string): Promise<SavedSentence | null> => {
@@ -132,7 +147,13 @@ export function useSentences({ userId, isOnline = true, showToast, onPendingChan
         // Optimistic update
         setSavedSentences(prev => prev.filter(s => s.id !== id));
 
-        if (isOnline) {
+        if (id.startsWith('temp_')) {
+            // 该句子仍是离线新增、尚未同步（temp id），服务器上并无对应行。
+            // 走离线取消路径：删除本地记录并撤销待同步的新增操作；不向服务器发 delete，
+            // 否则 delete().eq('id', temp_id) 匹配 0 行被误判为成功，随后同步又插回真实行导致「删除的句子复活」。
+            await markSentenceDeleted(id);
+            onPendingChange?.();
+        } else if (isOnline) {
             const { error } = await supabase.from('saved_sentences').delete().eq('id', id);
             if (error) {
                 // Restore on error
@@ -168,13 +189,16 @@ export function useSentences({ userId, isOnline = true, showToast, onPendingChan
                 language: sentence.language,
                 scene: sentence.scene,
                 source_type: sentence.source_type,
-                source_words: sentence.source_words || []
+                source_words: sentence.source_words || [],
+                keywords: sentence.keywords || [],
+                grammar: sentence.grammar || []
             }).select();
 
             if (!error && data) {
-                setSavedSentences(prev => [data[0], ...prev]);
+                const restored = withSentenceDefaults(data[0] as SavedSentence);
+                setSavedSentences(prev => [restored, ...prev]);
                 const allSentences = await getAllCachedSentences();
-                await setCachedSentences([data[0], ...allSentences]);
+                await setCachedSentences([restored, ...allSentences]);
                 showToast?.('success', '已恢复');
             }
         } else {

@@ -1,19 +1,22 @@
 import { useState, useRef, memo } from 'react';
 import { Icons } from './Icons';
 import type { SavedSentence } from '../types';
+import { SOURCE_TYPE_LABELS } from '../constants';
 
 interface SwipeableSentenceCardProps {
     sentence: SavedSentence;
     onDelete: () => void;
     onSpeak: () => void;
     speakingId: string | null;
+    cached: boolean;
 }
 
 // Swipeable Sentence Card - swipe delete on mobile, hover delete on desktop
-function SwipeableSentenceCard({ sentence, onDelete, onSpeak, speakingId }: SwipeableSentenceCardProps) {
+function SwipeableSentenceCard({ sentence, onDelete, onSpeak, speakingId, cached }: SwipeableSentenceCardProps) {
     const [offset, setOffset] = useState(0);
     const [swiping, setSwiping] = useState(false);
     const [hovering, setHovering] = useState(false);
+    const [grammarOpen, setGrammarOpen] = useState(false);
     const [swipeDirection, setSwipeDirection] = useState<'horizontal' | 'vertical' | null>(null);
     const startX = useRef(0);
     const startY = useRef(0);
@@ -102,7 +105,7 @@ function SwipeableSentenceCard({ sentence, onDelete, onSpeak, speakingId }: Swip
                                 📍 {s.scene}
                             </span>
                         )}
-                        <span className="text-xs text-slate-400">{s.source_type === 'combined' ? '组合造句' : '单词例句'}</span>
+                        <span className="text-xs text-slate-400">{SOURCE_TYPE_LABELS[s.source_type]}</span>
                     </div>
                     {/* Desktop delete button (hover devices only) */}
                     <button
@@ -115,19 +118,55 @@ function SwipeableSentenceCard({ sentence, onDelete, onSpeak, speakingId }: Swip
                 </div>
                 <div className="text-base text-slate-800 dark:text-slate-200 mb-1 leading-relaxed">{s.sentence}</div>
                 <div className="text-sm text-slate-500 dark:text-slate-400 mb-2">{s.sentence_cn}</div>
-                {s.source_words && s.source_words.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mb-2">
-                        {s.source_words.map((w, i) => (
-                            <span key={i} className="text-xs px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-full">{w}</span>
-                        ))}
-                    </div>
+                {s.source_type === 'input' ? (
+                    <>
+                        {/* 我的句子：重点词 + 语法点 */}
+                        {s.keywords && s.keywords.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mb-2">
+                                {s.keywords.map((kw, i) => (
+                                    <span key={i} className="text-xs px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-full">
+                                        {kw.word} · {kw.meaning}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                        {s.grammar && s.grammar.length > 0 && (
+                            <div className="mb-2 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                                <button
+                                    className="w-full flex items-center justify-between px-2.5 py-1.5 bg-slate-50 dark:bg-slate-900/50 text-left"
+                                    onClick={(e) => { e.stopPropagation(); setGrammarOpen(o => !o); }}
+                                >
+                                    <span className="text-xs font-medium text-slate-600 dark:text-slate-300">语法点 ({s.grammar.length})</span>
+                                    <span className="text-slate-400 text-xs">{grammarOpen ? '▲' : '▼'}</span>
+                                </button>
+                                {grammarOpen && (
+                                    <div className="px-2.5 py-2 space-y-1.5">
+                                        {s.grammar.map((g, i) => (
+                                            <div key={i}>
+                                                <div className="text-xs font-medium text-slate-700 dark:text-slate-200 break-words">{g.point}</div>
+                                                <div className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed break-words">{g.explanation}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </>
+                ) : (
+                    s.source_words && s.source_words.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mb-2">
+                            {s.source_words.map((w, i) => (
+                                <span key={i} className="text-xs px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-full">{w}</span>
+                            ))}
+                        </div>
+                    )
                 )}
                 <div className="flex gap-2">
                     <button
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 active:scale-95 transition-all text-sm"
                         onClick={onSpeak}
                     >
-                        <Icons.Speaker playing={speakingId === s.id} cached={false} /> 朗读
+                        <Icons.Speaker playing={speakingId === s.id} cached={cached} /> 朗读
                     </button>
                 </div>
             </div>

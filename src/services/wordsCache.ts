@@ -86,6 +86,62 @@ export async function getAllCachedWords(): Promise<Word[]> {
     }
 }
 
+// 仅返回本地离线新增、尚未同步（pending_add）的词汇。
+// 用于在服务器数据覆盖内存前做合并，避免离线新增词从 UI 消失。
+export async function getPendingAddWords(): Promise<Word[]> {
+    try {
+        const db = await getDB();
+        return new Promise((resolve) => {
+            const transaction = db.transaction(WORDS_STORE, 'readonly');
+            const store = transaction.objectStore(WORDS_STORE);
+            const request = store.getAll();
+
+            request.onsuccess = () => {
+                const words = (request.result as CachedWord[])
+                    .filter(w => w.syncStatus === 'pending_add')
+                    .map(({ syncStatus, ...word }) => word as Word)
+                    .sort((a, b) => b.timestamp - a.timestamp);
+                resolve(words);
+            };
+
+            request.onerror = () => {
+                console.error('Failed to get pending add words:', request.error);
+                resolve([]);
+            };
+        });
+    } catch {
+        return [];
+    }
+}
+
+// 合并服务器词汇与本地 pending_add 词汇（纯函数，便于测试）。
+// - 保留全部服务器结果
+// - 追加 id 不在服务器结果中的 pending_add 词汇（离线新增、尚未同步）
+// - 结果按 timestamp 倒序，与服务器 created_at 倒序一致
+// 已同步的 pending_add 在服务器结果里会以真实 id 出现，因而不会重复追加。
+export function mergePendingAdds(serverWords: Word[], pendingAdds: Word[]): Word[] {
+    const serverIds = new Set(serverWords.map(w => w.id));
+    const extras = pendingAdds.filter(w => !serverIds.has(w.id));
+    return [...extras, ...serverWords].sort((a, b) => b.timestamp - a.timestamp);
+}
+
+// 从本地待迁移词汇中筛掉服务器已存在的项（纯函数，便于测试）。
+// 去重键为大小写不敏感的 word + language，同时对本地列表内部重复去重，
+// 避免插入重复行（words 表无 UNIQUE 约束）。
+export function selectWordsToMigrate(localWords: Word[], serverWords: Word[]): Word[] {
+    const existing = new Set(
+        serverWords.map(w => `${(w.word || '').toLowerCase()}|${w.language}`)
+    );
+    const result: Word[] = [];
+    for (const w of localWords) {
+        const key = `${(w.word || '').toLowerCase()}|${w.language}`;
+        if (existing.has(key)) continue;
+        existing.add(key);
+        result.push(w);
+    }
+    return result;
+}
+
 // Set all cached words (full sync from server)
 export async function setCachedWords(words: Word[]): Promise<void> {
     try {
@@ -262,6 +318,35 @@ export async function removePendingOperation(id: string): Promise<void> {
         });
     } catch (error) {
         console.error('Failed to remove pending operation:', error);
+    }
+}
+
+// 递增并持久化某个待同步操作的重试次数，返回递增后的次数。
+// 同步失败时调用，配合重试上限跳过注定失败的操作。操作本身不删除（不丢数据）。
+export async function incrementOperationRetry(id: string): Promise<number> {
+    try {
+        const db = await getDB();
+        return new Promise((resolve) => {
+            const transaction = db.transaction(PENDING_STORE, 'readwrite');
+            const store = transaction.objectStore(PENDING_STORE);
+            let newCount = 0;
+
+            const getRequest = store.get(id);
+            getRequest.onsuccess = () => {
+                const op = getRequest.result as PendingOperation | undefined;
+                if (op) {
+                    newCount = (op.retryCount || 0) + 1;
+                    op.retryCount = newCount;
+                    store.put(op);
+                }
+            };
+
+            transaction.oncomplete = () => resolve(newCount);
+            transaction.onerror = () => resolve(newCount);
+        });
+    } catch (error) {
+        console.error('Failed to increment operation retry:', error);
+        return 0;
     }
 }
 
