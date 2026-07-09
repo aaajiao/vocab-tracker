@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import type { Word } from '../types';
 import { deleteCachedAudio, generateCacheKey } from '../services/audioCache';
@@ -72,6 +72,10 @@ export function useWords({ userId, isOnline = true, onLoadComplete, showToast, o
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
 
+    // 镜像最新 words，供 refreshFromServer 判断本地是否非空（避免闭包过期）
+    const wordsRef = useRef(words);
+    useEffect(() => { wordsRef.current = words; }, [words]);
+
     // Load words - first from cache, then from server if online
     useEffect(() => {
         if (!userId) {
@@ -104,15 +108,22 @@ export function useWords({ userId, isOnline = true, onLoadComplete, showToast, o
                 } else {
                     const formatted: Word[] = (data || []).map(formatWordRow);
 
-                    // 合并本地 pending_add（离线新增、尚未同步）项，避免整体覆盖内存后离线词从 UI 消失
-                    const pendingAdds = await getPendingAddWords();
-                    setWords(mergePendingAdds(formatted, pendingAdds));
+                    // 防御：服务器「成功但返回空」而本地缓存非空时，判为重连后 RLS/token 瞬时竞态，
+                    // 不用空覆盖内存与缓存——否则整列表瞬间清空、需重启才恢复。真正的空账户本地也为空，不误伤。
+                    // 代价：极少数「在另一设备清空全部单词」场景，本设备需下次非空同步或手动清缓存才反映。
+                    if (formatted.length === 0 && cachedWords.length > 0) {
+                        console.warn('Words: server returned empty while local cache non-empty; skipping overwrite (suspected transient auth race)');
+                    } else {
+                        // 合并本地 pending_add（离线新增、尚未同步）项，避免整体覆盖内存后离线词从 UI 消失
+                        const pendingAdds = await getPendingAddWords();
+                        setWords(mergePendingAdds(formatted, pendingAdds));
 
-                    // Update cache with server data（setCachedWords 内部会保留 pending 项）
-                    await setCachedWords(formatted);
+                        // Update cache with server data（setCachedWords 内部会保留 pending 项）
+                        await setCachedWords(formatted);
 
-                    // Migrate localStorage if needed（传入服务器词汇用于去重）
-                    await migrateLocalStorage(userId, formatted);
+                        // Migrate localStorage if needed（传入服务器词汇用于去重）
+                        await migrateLocalStorage(userId, formatted);
+                    }
                 }
             } else if (cachedWords.length === 0) {
                 showToast?.('info', '离线模式 · 无缓存数据');
@@ -137,6 +148,12 @@ export function useWords({ userId, isOnline = true, onLoadComplete, showToast, o
 
         if (!error && data) {
             const formatted: Word[] = data.map(formatWordRow);
+            // 防御：服务器「成功但返回空」而本地内存非空时（重连后触发的 refresh 尤其可能撞上 RLS/token
+            // 瞬时竞态），跳过，不用空覆盖内存与缓存。真正全删本地内存也已为空，不受影响。见加载副作用同款注释。
+            if (formatted.length === 0 && wordsRef.current.length > 0) {
+                console.warn('Words: refresh returned empty while local non-empty; skipping overwrite (suspected transient auth race)');
+                return;
+            }
             // 合并本地 pending_add 项：同步失败时仍保留未同步词，不必等冷启动才复现
             const pendingAdds = await getPendingAddWords();
             setWords(mergePendingAdds(formatted, pendingAdds));
