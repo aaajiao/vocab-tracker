@@ -465,7 +465,12 @@ function App() {
             grammar: draft.grammar
         }, '已保存到收藏');
         // 仅在保存成功时关闭表单并清空草稿；失败时保留用户手填/AI 生成的整句，供直接重试，不丢草稿
-        if (ok) resetAddForm();
+        if (ok) {
+            resetAddForm();
+            // 搜索框兼作句子输入，整句仍留在 searchQuery 里；不清会把词列表全过滤空（只剩刚存的句子命中）。
+            // 与单词添加路径（handleAddWord）保持一致，保存后清空搜索。
+            setSearchQuery('');
+        }
     }, [sentenceDraft, saveSentence, resetAddForm]);
 
     const handleAddWord = async () => {
