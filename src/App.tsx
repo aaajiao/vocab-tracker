@@ -250,12 +250,17 @@ function App() {
         setSentenceNeedsConnection(false);
         setAiLoading(false);
         setNewWord(prev => ({ word: '', meaning: '', language: prev.language, example: '', exampleCn: '', category: '', etymology: '' }));
+        // 搜索框兼作句子/单词输入框，退出添加态时一并清空——否则残留的整句会把词列表按词过滤成空
+        // （只剩刚存的句子在收藏命中），且这是纯内存态，用户只能退出重进才恢复。覆盖成功/取消/失败全路径。
+        setSearchQuery('');
     }, []);
 
     const handleStartAdd = async () => {
         setIsAdding(true);
         const text = searchQuery.trim();
         if (!text) return;
+        // 文本已捕获进 text/newWord，立即清空搜索框：进入添加态后词列表不再被这段整句过滤成空
+        setSearchQuery('');
 
         if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
 
@@ -465,12 +470,8 @@ function App() {
             grammar: draft.grammar
         }, '已保存到收藏');
         // 仅在保存成功时关闭表单并清空草稿；失败时保留用户手填/AI 生成的整句，供直接重试，不丢草稿
-        if (ok) {
-            resetAddForm();
-            // 搜索框兼作句子输入，整句仍留在 searchQuery 里；不清会把词列表全过滤空（只剩刚存的句子命中）。
-            // 与单词添加路径（handleAddWord）保持一致，保存后清空搜索。
-            setSearchQuery('');
-        }
+        // （resetAddForm 内已清空搜索框，覆盖成功路径）
+        if (ok) resetAddForm();
     }, [sentenceDraft, saveSentence, resetAddForm]);
 
     const handleAddWord = async () => {
@@ -495,8 +496,7 @@ function App() {
             date: new Date().toLocaleDateString('sv-SE')
         });
 
-        resetAddForm();
-        setSearchQuery('');
+        resetAddForm(); // 内含清空搜索框
     };
 
     const handleDeleteWord = useCallback(async (id: string) => {
