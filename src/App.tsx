@@ -471,7 +471,10 @@ function App() {
         }, '已保存到收藏');
         // 仅在保存成功时关闭表单并清空草稿；失败时保留用户手填/AI 生成的整句，供直接重试，不丢草稿
         // （resetAddForm 内已清空搜索框，覆盖成功路径）
-        if (ok) resetAddForm();
+        if (ok) {
+            resetAddForm();
+            setActiveTab('saved'); // 保存成功后跳到「收藏」，直接看到刚存的句子，而非停在原词表 tab
+        }
     }, [sentenceDraft, saveSentence, resetAddForm]);
 
     const handleAddWord = async () => {
