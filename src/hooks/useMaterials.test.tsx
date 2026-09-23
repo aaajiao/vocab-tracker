@@ -101,6 +101,11 @@ describe('词句 hook 的账号与持久化边界', () => {
         expect(await getMaterialOperations(owner)).toEqual([]); expect(words.words).toEqual([]);
         await act(async () => { ok = await words.addWord(newWord); }); expect(ok).toBe(true);
     });
+    it('换账号后本机读取失败也会结束首次加载，不把空界面永久锁在骨架屏', async () => {
+        const a = crypto.randomUUID(), b = crypto.randomUUID(); await setCachedWords([existingWord()], a); await render(a, false);
+        vi.spyOn(IDBIndex.prototype, 'getAll').mockImplementationOnce(() => { throw new DOMException('blocked', 'InvalidStateError'); });
+        await render(b, false); expect(words.loading).toBe(false); expect(words.words).toEqual([]);
+    });
     it('未发送删除撤销保留ID；未知删除结果则先确认删除再用稳定新ID恢复', async () => {
         const owner = crypto.randomUUID(), value = existingWord(); await setCachedWords([value], owner); await markWordDeleted(value.id, owner);
         await render(owner, false); await act(async () => { expect(await words.restoreWord(value)).toBe(true); });

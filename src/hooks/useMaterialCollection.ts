@@ -47,7 +47,7 @@ export function useMaterialCollection<T extends MaterialValue>({ userId, isOnlin
             await replaceMaterials(userId, kind, rows, revision);
             if (valid()) await loadLocal();
         } catch (error) { if (valid()) callbacks.current.onError?.(learningErrorMessage(error)); }
-        finally { if (valid()) { setLoading(false); callbacks.current.onLoadComplete?.(); } }
+        finally { if (valid()) { readyOwner.current = userId; setLoading(false); callbacks.current.onLoadComplete?.(); } }
     }, [userId, kind, isOnline, decode, isCurrent, loadLocal]);
     useEffect(() => {
         mounted.current = true;
