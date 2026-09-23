@@ -146,6 +146,7 @@ export interface SentenceInput {
 }
 
 export interface SettingsPanelProps {
+    userId: string;
     apiKey: string;
     setApiKey: (key: string) => void;
     userEmail?: string;

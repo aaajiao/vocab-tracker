@@ -41,8 +41,11 @@ export function strings(value: unknown, name: string, maxCount: number, maxLengt
 }
 export function timezone(value: unknown): string {
     const zone = str(value, 'timezone', 80);
-    try { new Intl.DateTimeFormat('en', { timeZone: zone }).format(); } catch { invalid('时区无效'); }
-    return zone;
+    try {
+        const normalized = new Intl.DateTimeFormat('en', { timeZone: zone }).resolvedOptions().timeZone;
+        if (/^[+-]/.test(normalized)) invalid('请使用 Europe/Berlin 这样的命名时区');
+        return normalized;
+    } catch { invalid('时区无效'); }
 }
 export function timestamp(value: unknown): string {
     const raw = str(value, 'practiced_at', 40);

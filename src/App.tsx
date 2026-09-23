@@ -11,6 +11,7 @@ import ToastContainer from './components/ToastContainer';
 import SwipeableSentenceCard from './components/SwipeableSentenceCard';
 import SentenceCard from './components/SentenceCard';
 import ReviewSession from './components/ReviewSession';
+import PracticeHistoryPanel from './components/PracticeHistoryPanel';
 import { PageSkeleton } from './components/Skeleton';
 
 // Constants
@@ -800,7 +801,7 @@ function App() {
                     <button className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 rounded-lg active:scale-90 transition-all" onClick={toggleTheme}>
                         {theme === 'dark' ? <Icons.Sun /> : <Icons.Moon />}
                     </button>
-                    <button className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 rounded-lg active:scale-90 transition-all" onClick={() => setShowSettings(!showSettings)}><Icons.Settings /></button>
+                    <button aria-label="设置" className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 rounded-lg active:scale-90 transition-all" onClick={() => setShowSettings(!showSettings)}><Icons.Settings /></button>
                     {words.length > 0 && (
                         <button className="flex items-center gap-2 px-3 py-2 text-sm text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg active:scale-95 transition-all" onClick={exportWords}><Icons.Download /> 导出</button>
                     )}
@@ -882,8 +883,8 @@ function App() {
             )}
 
             {/* Settings Panel */}
-            {showSettings && apiKey && (
-                <SettingsPanel apiKey={apiKey} setApiKey={setApiKey} userEmail={user?.email} />
+            {showSettings && user && (
+                <SettingsPanel apiKey={apiKey} setApiKey={setApiKey} userEmail={user.email} userId={user.id} />
             )}
 
             {/* Stats */}
@@ -1275,6 +1276,7 @@ function App() {
 
             {/* Word List */}
             {activeTab === 'review' ? (
+                <div className="space-y-6">
                 <ReviewSession
                     loading={reviewLoading}
                     dueCount={dueCount}
@@ -1300,6 +1302,8 @@ function App() {
                     getCategoryClass={getCategoryClass}
                     getCategoryLabel={getCategoryLabel}
                 />
+                {user && <PracticeHistoryPanel userId={user.id} />}
+                </div>
             ) : activeTab === 'saved' ? (
                 <div>
                     {savedSentences.length === 0 ? (

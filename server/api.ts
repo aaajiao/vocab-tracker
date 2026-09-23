@@ -43,8 +43,8 @@ export async function route(request: Request, db: SupabaseClient, identity: Iden
     if (path === 'tokens' || path.startsWith('tokens/')) {
         requireSession(identity);
         if (path === 'tokens' && method === 'GET') {
-            const { data, error } = await db.from('api_access_tokens').select(TOKEN_COLUMNS).eq('user_id', userId).order('created_at', { ascending: false }).limit(100);
-            dbError(error); return result(data);
+            const { data, error } = await db.from('api_access_tokens').select(TOKEN_COLUMNS).eq('user_id', userId).order('created_at', { ascending: false }).order('id').range(offset, offset + limit);
+            dbError(error); return page(data || [], limit, offset);
         }
         if (path === 'tokens' && method === 'POST') {
             const body = await jsonBody(request); keys(body, ['name', 'scopes', 'expires_in_days']);
@@ -99,7 +99,7 @@ export async function route(request: Request, db: SupabaseClient, identity: Iden
         if (body.interests !== undefined) patch.interests = strings(body.interests, 'interests', 20, 80);
         // 先保证默认行存在，再局部 UPDATE，避免并发 PATCH 覆盖未修改字段。
         const init = await db.from('learning_preferences').upsert({ user_id: userId }, { onConflict: 'user_id', ignoreDuplicates: true }); dbError(init.error);
-        if (Object.keys(patch).length) { const update = await db.from('learning_preferences').update(patch).eq('user_id', userId); dbError(update.error); }
+        if (Object.keys(patch).length) { const update = await db.from('learning_preferences').update({ ...patch, updated_at: new Date().toISOString() }).eq('user_id', userId); dbError(update.error); }
         return result(await preferences(db, userId));
     }
     if (path === 'sessions' && method === 'GET') {
@@ -118,8 +118,8 @@ export async function route(request: Request, db: SupabaseClient, identity: Iden
         if (method === 'GET') {
             read(); const { data, error } = await db.from('practice_sessions').select(SESSION_COLUMNS).eq('id', id).eq('user_id', userId).maybeSingle(); dbError(error);
             if (!data) throw new ApiError(404, 'not_found', '练习不存在');
-            const events = await db.from('review_events').select(EVENT_COLUMNS).eq('session_id', id).eq('user_id', userId).order('practiced_at').order('id').limit(1001); dbError(events.error);
-            return result({ session: data, events: events.data?.slice(0, 1000) || [] }, { events_truncated: (events.data?.length || 0) > 1000 });
+            const events = await db.from('review_events').select(EVENT_COLUMNS, { count: 'exact' }).eq('session_id', id).eq('user_id', userId).order('practiced_at').order('id').limit(1000); dbError(events.error);
+            return result({ session: data, events: events.data || [] }, { events_truncated: (events.count || 0) > (events.data?.length || 0) });
         }
         if (method === 'PATCH') {
             write(); const body = await jsonBody(request); keys(body, ['status', 'summary', 'expected_version']);

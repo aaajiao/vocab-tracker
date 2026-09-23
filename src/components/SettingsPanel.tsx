@@ -5,8 +5,9 @@ import { getCacheStats, clearAudioCache } from '../services/tts';
 import { getWordsCacheStats, clearWordsCache } from '../services/wordsCache';
 import { getSentencesCacheStats, clearSentencesCache } from '../services/sentencesCache';
 import { STORAGE_KEYS } from '../constants';
+import CodexConnectionPanel from './CodexConnectionPanel';
 
-function SettingsPanel({ apiKey, setApiKey, userEmail }: SettingsPanelProps) {
+function SettingsPanel({ apiKey, setApiKey, userEmail, userId }: SettingsPanelProps) {
     const [audioCacheStats, setAudioCacheStats] = useState<{ count: number; totalSize: number } | null>(null);
     const [wordsCacheStats, setWordsCacheStats] = useState<{ count: number; pendingCount: number } | null>(null);
     const [sentencesCacheStats, setSentencesCacheStats] = useState<{ count: number; pendingCount: number } | null>(null);
@@ -59,6 +60,7 @@ function SettingsPanel({ apiKey, setApiKey, userEmail }: SettingsPanelProps) {
 
     return (
         <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4 mb-6 space-y-4">
+            <CodexConnectionPanel userId={userId} />
             {/* API Key Section */}
             <div>
                 <h3 className="text-sm font-semibold mb-2 text-slate-800 dark:text-slate-100">API Key</h3>
