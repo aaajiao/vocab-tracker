@@ -84,8 +84,9 @@ export async function route(request: Request, db: SupabaseClient, identity: Iden
     }
     if (path === 'review' && method === 'GET') {
         read(); const prefs = await preferences(db, userId);
-        const data = await rpc(db, 'learning_get_review', userId, { p_language: params.has('language') ? choice(params.get('language'), 'language', ['en', 'de']) : null, p_mode: choice(params.get('mode') ?? undefined, 'mode', ['due', 'ahead', 'all'], 'due'), p_timezone: timezone(params.get('timezone') || prefs.timezone), p_limit: limit, p_offset: offset });
-        return result(data.data, data.meta);
+        const zone = timezone(params.get('timezone') || prefs.timezone);
+        const data = await rpc(db, 'learning_get_review', userId, { p_language: params.has('language') ? choice(params.get('language'), 'language', ['en', 'de']) : null, p_mode: choice(params.get('mode') ?? undefined, 'mode', ['due', 'ahead', 'all'], 'due'), p_timezone: zone, p_limit: limit, p_offset: offset });
+        return result(data.data, { ...data.meta, timezone: zone });
     }
     if (path === 'preferences' && method === 'GET') { read(); return result(await preferences(db, userId)); }
     if (path === 'preferences' && method === 'PATCH') {

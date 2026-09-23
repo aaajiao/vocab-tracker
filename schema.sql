@@ -652,3 +652,18 @@ GRANT EXECUTE ON FUNCTION public.learning_valid_text_array(text[],integer,intege
     public.learning_get_review(uuid,text,text,text,integer,integer), public.learning_create_session(uuid,jsonb),
     public.learning_update_session(uuid,uuid,jsonb), public.learning_record_event(uuid,jsonb),
     public.learning_save_sentence(uuid,jsonb) TO service_role;
+
+
+-- ============================================================
+-- 5. 复习状态仅允许事件 API 写入（阶段 4）
+-- ============================================================
+
+-- 阶段 4：网页已改为提交 review_events 后再应用本迁移。
+-- 旧标签页不再能用离线整行 upsert 覆盖 Codex 或其他设备的新排期。
+-- 用户仍通过 words 删除词汇；关联排期由外键 ON DELETE CASCADE 清理。
+REVOKE INSERT, UPDATE, DELETE ON public.review_states FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON public.review_states TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.review_states TO service_role;
+DROP POLICY IF EXISTS "Users can insert own review states" ON public.review_states;
+DROP POLICY IF EXISTS "Users can update own review states" ON public.review_states;
+DROP POLICY IF EXISTS "Users can delete own review states" ON public.review_states;

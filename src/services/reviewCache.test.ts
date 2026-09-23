@@ -161,3 +161,32 @@ describe('reviewCache', () => {
         });
     });
 });
+
+
+describe('account-isolated review cache migration', () => {
+    beforeEach(async () => { await clear(); });
+
+    it('keeps unowned legacy data out of every account view', async () => {
+        await upsert(makeState({ wordId: 'legacy' }), 'pending_upsert');
+        await upsert(makeState({ wordId: 'owned' }), 'synced', 'user-a');
+        expect((await getAll()).map((state) => state.wordId)).toEqual(['legacy']);
+        expect((await getAll('user-a')).map((state) => state.wordId)).toEqual(['owned']);
+        expect(await getAll('user-b')).toEqual([]);
+    });
+
+    it('allows the same word key in separate account stores without contamination', async () => {
+        await upsert(makeState({ reps: 3 }), 'synced', 'user-a');
+        await upsert(makeState({ reps: 7 }), 'synced', 'user-b');
+        expect((await get('word-1', 'user-a'))?.reps).toBe(3);
+        expect((await get('word-1', 'user-b'))?.reps).toBe(7);
+        await remove('word-1', 'user-a');
+        expect(await get('word-1', 'user-a')).toBeUndefined();
+        expect(await get('word-1', 'user-b')).toBeDefined();
+    });
+
+    it('does not let an older response overwrite a newer authoritative state', async () => {
+        await upsert(makeState({ reps: 5, updatedAt: '2026-07-08T10:00:00Z' }), 'synced', 'user-a');
+        await upsert(makeState({ reps: 1, updatedAt: '2026-07-07T10:00:00Z' }), 'synced', 'user-a');
+        expect((await get('word-1', 'user-a'))?.reps).toBe(5);
+    });
+});

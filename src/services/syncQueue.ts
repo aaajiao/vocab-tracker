@@ -16,24 +16,7 @@ import {
     removeFromSentenceCache,
     incrementSentenceOperationRetry,
 } from './sentencesCache';
-import {
-    getPending as getPendingReviewStates,
-    markSynced as markReviewStateSynced,
-    remove as removeReviewState,
-    toReviewRow,
-} from './reviewCache';
-
-// Postgres 外键冲突错误码：word 已被服务端删除，其残留的复习状态 upsert 会命中此码。
-const PG_FK_VIOLATION = '23503';
-
-// 从任意错误对象上尽力取出 Postgres/PostgREST 错误码（Supabase 用普通对象抛错）。
-function errorCode(error: unknown): string | undefined {
-    if (error && typeof error === 'object' && 'code' in error) {
-        const code = (error as { code: unknown }).code;
-        return code == null ? undefined : String(code);
-    }
-    return undefined;
-}
+import { syncReviewEvents, getPendingReviewEventCount } from './reviewEventQueue';
 
 // 单个待同步操作的最大重试次数。达到上限后跳过（不再尝试、不计入待同步数），
 // 但数据保留在 IndexedDB 中不删除，避免徽标永挂、定时器空转与数据丢失。
@@ -181,54 +164,12 @@ async function processSentenceOperations(userId: string): Promise<{ synced: numb
     return { synced, failed, deadLettered, errors };
 }
 
-// Process all pending review-state upserts.
-// review state 只为真实 UUID 的 word 创建（见 useReview），因此无 temp→UUID 重映射；
-// 防御起见跳过并丢弃任何 temp id 的残留状态。外键冲突（word 已被删）→ 丢弃并删本地状态，不阻塞其余。
-// 服务端表未迁移等其他错误 → 保持 pending（不 markSynced），仅 console.error，不抛致命错误。
-async function processReviewOperations(userId: string): Promise<{ synced: number; failed: number; deadLettered: number; errors: string[] }> {
-    const pending = await getPendingReviewStates();
-    let synced = 0;
-    let failed = 0;
-    const deadLettered = 0; // review 无重试上限概念，恒为 0
-    const errors: string[] = [];
-
-    for (const state of pending) {
-        // 防御：temp id 不该有复习状态，若存在则丢弃本地状态，不发起同步
-        if (state.wordId.startsWith('temp_')) {
-            await removeReviewState(state.wordId);
-            continue;
-        }
-        try {
-            const row = toReviewRow(state, userId);
-            const { error } = await supabase
-                .from('review_states')
-                .upsert(row, { onConflict: 'word_id' });
-
-            if (error) {
-                throw error;
-            }
-
-            await markReviewStateSynced(state.wordId, state.updatedAt);
-            synced++;
-        } catch (error: unknown) {
-            // 外键冲突：对应 word 已在服务端被删，丢弃该 pending 并删除本地状态（不计失败、不阻塞）
-            if (errorCode(error) === PG_FK_VIOLATION) {
-                await removeReviewState(state.wordId);
-                continue;
-            }
-            failed++;
-            errors.push(`Review op upsert: ${formatError(error)}`);
-            console.error('Failed to sync review state:', state, error);
-            // 其他失败（含表未迁移）：保持 pending，等待下次同步
-        }
-    }
-
-    return { synced, failed, deadLettered, errors };
-}
+// 复习通过用户隔离的幂等事件队列提交，旧状态备份永不上传。
+const processReviewOperations = syncReviewEvents;
 
 // 模块级 in-flight 互斥锁：并发调用复用同一个 Promise，保证同一批 pending 只处理一次，
 // 避免（如 React 状态锁在同一提交批次内被双入时）重复插入。hook 层的 isSyncing 仅用于 UI 展示。
-let inFlightSync: Promise<SyncResult> | null = null;
+let inFlightSync: { userId: string; promise: Promise<SyncResult> } | null = null;
 
 async function runSync(userId: string): Promise<SyncResult> {
     try {
@@ -267,26 +208,29 @@ export async function syncPendingOperations(userId: string): Promise<SyncResult>
 
     // 已有同步进行中：复用同一 Promise，不再重复发起。
     if (inFlightSync) {
-        return inFlightSync;
+        if (inFlightSync.userId === userId) return inFlightSync.promise;
+        await inFlightSync.promise;
+        return syncPendingOperations(userId);
     }
 
-    inFlightSync = runSync(userId);
+    const promise = runSync(userId);
+    inFlightSync = { userId, promise };
     try {
-        return await inFlightSync;
+        return await promise;
     } finally {
-        inFlightSync = null;
+        if (inFlightSync?.promise === promise) inFlightSync = null;
     }
 }
 
 // Get total pending operations count.
 // 排除已达重试上限的操作，避免徽标永挂、30 秒定时器空转反复重试注定失败的请求。
-export async function getPendingCount(): Promise<number> {
+export async function getPendingCount(userId?: string): Promise<number> {
     const wordOps = await getPendingOperations();
     const sentenceOps = await getPendingSentenceOperations();
     const active = (retryCount: number | undefined) => (retryCount || 0) < MAX_SYNC_RETRIES;
     const wordActive = wordOps.filter(op => active(op.retryCount)).length;
     const sentenceActive = sentenceOps.filter(op => active(op.retryCount)).length;
-    // review 无 retryCount 概念，直接计 pending_upsert 数
-    const reviewPending = (await getPendingReviewStates()).length;
+    // 未知账号不计入任何复习事件，避免泄露/误归属别的账号的本地队列。
+    const reviewPending = userId ? await getPendingReviewEventCount(userId) : 0;
     return wordActive + sentenceActive + reviewPending;
 }

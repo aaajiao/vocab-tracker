@@ -23,6 +23,8 @@ import { speakWord } from './services/tts';
 import { generateCacheKey } from './services/audioCache';
 import { classifyInput } from './services/inputHeuristic';
 import { filterSavedSentences, type SentenceLanguageFilter } from './services/sentenceFilter';
+import { getLegacyReviewBackup, discardLegacyReviewBackup } from './services/reviewCache';
+import { getReviewEvents } from './services/reviewEventQueue';
 
 // Hooks
 import { useTheme } from './hooks/useTheme';
@@ -61,6 +63,7 @@ function App() {
                 // Refresh data from server after sync
                 refreshFromServer();
                 refreshSentencesFromServer();
+                refreshReviewFromServer();
             }
             // deadLettered 是 failed 的子集（重试刚跨过上限、此后不再自动重试），
             // 给出比普通失败更明确、可操作的提示；否则回退到通用的瞬时失败提示。
@@ -108,13 +111,15 @@ function App() {
         isSessionFinished: reviewFinished,
         summary: reviewSummary,
         startSession, startAheadSession, nextRound, endSession,
-        gradeWord, previewFor, removeReviewState
+        gradeWord, previewFor, removeReviewState,
+        refreshFromServer: refreshReviewFromServer, legacyPendingCount, failedEventCount,
     } = useReview({
         userId: user?.id,
         words,
         wordsLoading,
         isOnline,
-        onPendingChange: refreshPendingCount
+        onPendingChange: refreshPendingCount,
+        onError: message => showToast('error', message)
     });
 
     // Local state
@@ -144,6 +149,19 @@ function App() {
     });
     const [showSettings, setShowSettings] = useState(false);
     const [todayFilter, setTodayFilter] = useState(false);
+
+    // 从 Codex 回到网页时，重新读取云端学习结果及新收藏的句子。
+    const lastFocusRefresh = useRef(0);
+    useEffect(() => {
+        const refresh = () => {
+            if (!user?.id || !navigator.onLine || document.visibilityState === 'hidden' || Date.now() - lastFocusRefresh.current < 1500) return;
+            lastFocusRefresh.current = Date.now();
+            void Promise.allSettled([refreshFromServer(), refreshSentencesFromServer(), refreshReviewFromServer()]);
+        };
+        window.addEventListener('focus', refresh);
+        document.addEventListener('visibilitychange', refresh);
+        return () => { window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
+    }, [user?.id, refreshFromServer, refreshSentencesFromServer, refreshReviewFromServer]);
     const [newPassword, setNewPassword] = useState('');
     const [showSentence, setShowSentence] = useState(false);
     const [sentenceData, setSentenceData] = useState<SentenceData | null>(null);
@@ -1277,6 +1295,21 @@ function App() {
             {/* Word List */}
             {activeTab === 'review' ? (
                 <div className="space-y-6">
+                {(legacyPendingCount > 0 || failedEventCount > 0) && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200 space-y-2">
+                    {legacyPendingCount > 0 && <p>保留了 {legacyPendingCount} 条旧版离线复习状态。它们缺少逐次作答记录，请先导出备份，再根据需要重新复习。</p>}
+                    {failedEventCount > 0 && <p>有 {failedEventCount} 条练习因记录冲突或输入问题未能同步，已保留在本机，可导出检查。</p>}
+                    <button type="button" className="underline px-2 py-1" onClick={async () => {
+                        try {
+                            const backup = { legacy: await getLegacyReviewBackup(), events: user ? await getReviewEvents(user.id) : [] };
+                            const href = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' }));
+                            const anchor = document.createElement('a'); anchor.href = href; anchor.download = 'vocab-review-backup.json'; anchor.click(); setTimeout(() => URL.revokeObjectURL(href), 1000);
+                        } catch { showToast('error', '导出失败，请重试'); }
+                    }}>导出本机复习备份</button>
+                    {legacyPendingCount > 0 && <button type="button" className="underline px-2 py-1" onClick={async () => {
+                        if (!window.confirm('确认已经导出备份，并清除旧版离线复习状态？云端学习记录和新版待同步作答会保留。')) return;
+                        await discardLegacyReviewBackup(); await refreshReviewFromServer();
+                    }}>清理已备份的旧状态</button>}
+                </div>}
                 <ReviewSession
                     loading={reviewLoading}
                     dueCount={dueCount}

@@ -5,6 +5,8 @@ import type { ReviewState } from './srs';
 // Mock the supabase client BEFORE importing anything that pulls it in.
 // syncQueue.ts → import { supabase } from '../supabaseClient'
 const fromMock = vi.fn();
+const eventRequest = vi.hoisted(() => vi.fn());
+vi.mock('./learningApi', async (original) => ({ ...await original<typeof import('./learningApi')>(), learningRequest: eventRequest }));
 vi.mock('../supabaseClient', () => ({
     supabase: {
         from: (...args: unknown[]) => fromMock(...args),
@@ -21,6 +23,7 @@ const {
     clearWordsCache,
 } = await import('./wordsCache');
 const { clearSentencesCache } = await import('./sentencesCache');
+const { enqueueReviewEvent, getReviewEvents, clearReviewEventQueue } = await import('./reviewEventQueue');
 const {
     upsert: upsertReviewState,
     getPending: getPendingReviewStates,
@@ -76,6 +79,8 @@ describe('syncPendingOperations', () => {
         await clearWordsCache();
         await clearSentencesCache();
         await clearReviewCache();
+        await clearReviewEventQueue();
+        eventRequest.mockReset();
         fromMock.mockReset();
     });
 
@@ -224,84 +229,46 @@ describe('syncPendingOperations', () => {
     });
 });
 
-describe('syncPendingOperations — review states', () => {
+describe('syncPendingOperations — review events', () => {
     beforeEach(async () => {
         await clearWordsCache();
         await clearSentencesCache();
         await clearReviewCache();
+        await clearReviewEventQueue();
         fromMock.mockReset();
+        eventRequest.mockReset();
     });
 
-    // 只为 review_states 表打桩 upsert 链：from('review_states').upsert(rows, opts) → { error }
-    function mockReviewUpsert(error: unknown = null) {
-        fromMock.mockImplementation((table: string) => {
-            if (table === 'review_states') {
-                return { upsert: vi.fn().mockResolvedValue({ error }) };
-            }
-            // 其他表本测试无 pending，不应被调用
-            return { insert: vi.fn(), delete: vi.fn(), upsert: vi.fn() };
-        });
-    }
+    const attempt = (id: string) => ({ id, word_id: 'word-a', grade: 'known' as const, source: 'web' as const, practiced_at: '2026-09-23T10:00:00Z', timezone: 'Europe/Berlin' });
 
-    it('upserts a pending review state and marks it synced', async () => {
-        await upsertReviewState(makeReviewState('word-uuid-1'), 'pending_upsert');
-        mockReviewUpsert(null);
-
-        const result = await syncPendingOperations('user-123');
-
+    it('preserves legacy pending states without uploading or counting them', async () => {
+        await upsertReviewState(makeReviewState('legacy-word'), 'pending_upsert');
+        const result = await syncPendingOperations('user-a');
         expect(result.success).toBe(true);
-        expect(result.synced).toBe(1);
-        expect(fromMock).toHaveBeenCalledWith('review_states');
-
-        // 同步后不再 pending
-        expect(await getPendingReviewStates()).toHaveLength(0);
-        const state = await getReviewState('word-uuid-1');
-        expect(state?.syncStatus).toBe('synced');
-    });
-
-    it('keeps the state pending when the upsert errors (e.g. table not migrated)', async () => {
-        await upsertReviewState(makeReviewState('word-uuid-2'), 'pending_upsert');
-        mockReviewUpsert({ message: 'relation "review_states" does not exist', code: '42P01' });
-
-        const result = await syncPendingOperations('user-123');
-
-        expect(result.success).toBe(false);
-        expect(result.failed).toBe(1);
-        expect(result.errors[0]).toContain('review_states');
-
-        // 保持 pending，供下次重试
-        expect(await getPendingReviewStates()).toHaveLength(1);
-    });
-
-    it('discards the pending op and local state on a foreign-key violation', async () => {
-        await upsertReviewState(makeReviewState('word-deleted'), 'pending_upsert');
-        mockReviewUpsert({ message: 'insert or update violates foreign key', code: '23503' });
-
-        const result = await syncPendingOperations('user-123');
-
-        // FK 冲突不计失败、不阻塞
-        expect(result.failed).toBe(0);
         expect(result.synced).toBe(0);
-        // 本地状态被丢弃
-        expect(await getReviewState('word-deleted')).toBeUndefined();
-        expect(await getPendingReviewStates()).toHaveLength(0);
-    });
-
-    it('skips and drops a temp-id review state without hitting supabase', async () => {
-        await upsertReviewState(makeReviewState('temp_123_abc'), 'pending_upsert');
-
-        const result = await syncPendingOperations('user-123');
-
-        expect(result.synced).toBe(0);
-        expect(result.failed).toBe(0);
         expect(fromMock).not.toHaveBeenCalled();
-        // temp id 状态被丢弃
-        expect(await getReviewState('temp_123_abc')).toBeUndefined();
+        expect(eventRequest).not.toHaveBeenCalled();
+        expect(await getPendingReviewStates()).toHaveLength(1);
+        expect(await getPendingCount('user-a')).toBe(0);
     });
 
-    it('counts review pending states in getPendingCount', async () => {
-        await upsertReviewState(makeReviewState('word-a'), 'pending_upsert');
-        await upsertReviewState(makeReviewState('word-b'), 'synced');
-        expect(await getPendingCount()).toBe(1);
+    it('counts only current-account review events, and requires an account to count them', async () => {
+        await enqueueReviewEvent('user-a', attempt('a'));
+        await enqueueReviewEvent('user-b', attempt('b'));
+        await enqueueReviewEvent('user-b', attempt('c'));
+        expect(await getPendingCount('user-a')).toBe(1);
+        expect(await getPendingCount('user-b')).toBe(2);
+        expect(await getPendingCount()).toBe(0);
+    });
+
+    it('submits event payloads through the API, never direct state upserts', async () => {
+        await enqueueReviewEvent('user-a', attempt('a'));
+        eventRequest.mockResolvedValueOnce({ data: { event: {}, state: { word_id: 'word-a', due: '2026-09-26', interval_days: 3, ease: 2.5, reps: 1, lapses: 0, last_reviewed_at: '2026-09-23T10:00:00Z', updated_at: '2026-09-23T10:00:01Z' }, replayed: false } });
+        const result = await syncPendingOperations('user-a');
+        expect(result.synced).toBe(1);
+        expect(eventRequest).toHaveBeenCalledWith('/events', expect.objectContaining({ method: 'POST', userId: 'user-a', body: attempt('a') }));
+        expect(fromMock).not.toHaveBeenCalled();
+        expect(await getReviewEvents('user-a')).toEqual([]);
+        expect((await getReviewState('word-a', 'user-a'))?.reps).toBe(1);
     });
 });

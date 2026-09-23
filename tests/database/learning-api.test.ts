@@ -173,6 +173,18 @@ describe('真实 PostgreSQL 学习 API 迁移', () => {
         }
     });
 
+    it('事件按练习所在时区排期，跨午夜与夏令时不会错一天', async () => {
+        const cases=[
+            {practiced_at:'2025-03-29T23:30:00Z',timezone:'Europe/Berlin',due:'2025-04-02'},
+            {practiced_at:'2025-03-30T22:30:00Z',timezone:'Europe/Berlin',due:'2025-04-03'},
+            {practiced_at:'2025-06-15T01:00:00Z',timezone:'Pacific/Honolulu',due:'2025-06-17'},
+        ];
+        for (const {due,...input} of cases) {
+            await db.query('DELETE FROM public.review_states WHERE word_id=$1',[WORD]);
+            expect((await record(event(input))).state?.due).toBe(due);
+        }
+    });
+
     it('相同 ID 重试仅记分一次，内容冲突不改变排期，返回当前状态而非旧快照', async () => {
         const payload = event();
         const first = await record(payload);
@@ -207,6 +219,34 @@ describe('真实 PostgreSQL 学习 API 迁移', () => {
         expect(results.every(x=>x.state?.reps===1)).toBe(true);
         const next=await Promise.all(Array.from({length:3},()=>record(event())));
         expect(next.map(x=>x.state?.reps)).toEqual([2,3,4]);
+    });
+
+    it('同时提交冲突 ID 或同一会话版本，只有一个写入成功', async () => {
+        const payload=event();
+        const writes=await Promise.allSettled([record(payload),record({...payload,grade:'forgot'})]);
+        expect(writes.filter(x=>x.status==='fulfilled')).toHaveLength(1);
+        const conflict=writes.find(x=>x.status==='rejected') as PromiseRejectedResult;
+        expect(conflict.reason).toMatchObject({code:'PT409'});
+        const created=await call<Row>('learning_create_session',[OWNER,session()]);
+        const updates=await Promise.allSettled([
+            call('learning_update_session',[OWNER,created.id,{summary:'第一份',expected_version:1}]),
+            call('learning_update_session',[OWNER,created.id,{summary:'第二份',expected_version:1}]),
+        ]);
+        expect(updates.filter(x=>x.status==='fulfilled')).toHaveLength(1);
+        expect((updates.find(x=>x.status==='rejected') as PromiseRejectedResult).reason).toMatchObject({code:'PT409'});
+    });
+
+    it('等价 ISO 时间与不同数据库时区不影响请求幂等', async () => {
+        const payload=event();
+        const original=await record(payload);
+        await db.exec("SET timezone = 'America/New_York'");
+        try {
+            const replay=await record({...payload,practiced_at:'2025-06-15T14:00:00+02:00'});
+            expect(replay.replayed).toBe(true);
+            expect(replay.state).toEqual(original.state);
+        } finally {
+            await db.exec("SET timezone = 'UTC'");
+        }
     });
 
     it('跨账号词汇、会话与重放都被拒绝且不产生事件', async () => {
@@ -257,7 +297,8 @@ describe('真实 PostgreSQL 学习 API 迁移', () => {
     it('输入边界、未来时间与不存在的词不能改变权威状态', async () => {
         for (const changes of [{grade:'easy'}, {hint_count:101}, {timezone:'fake'},
             {answer:'a'.repeat(8001)}, {practiced_at:'infinity'}, {practiced_at:'2038-01-01T00:00:00Z'},
-            {error_tags:['x'.repeat(81)]}, {id:'not-a-uuid'}, {user_id:OTHER}]) {
+            {error_tags:['x'.repeat(81)]}, {error_tags:[1]}, {answer:{text:'untyped'}}, {hint_count:'2'},
+            {practiced_at:'yesterday'}, {id:'not-a-uuid'}, {user_id:OTHER}]) {
             await expect(record(event(changes)),JSON.stringify(changes).slice(0,100)).rejects.toMatchObject({code:'PT400'});
         }
         await expect(record(event({word_id:randomUUID()}))).rejects.toMatchObject({code:'PT404'});
@@ -282,5 +323,26 @@ describe('真实 PostgreSQL 学习 API 迁移', () => {
         const replay=await record(payload);
         expect(replay).toMatchObject({replayed:true,state:null,event:{word_snapshot:{word:'Haus',meaning:'房子'}}});
         await expect(record(event())).rejects.toMatchObject({code:'PT404'});
+    });
+
+    it('阶段 4 迁移阻止旧客户端整行覆盖或删除排期，保留按用户读取与删词级联', async () => {
+        await record(event());
+        await db.exec('RESET ROLE');
+        const protection=readFileSync(new URL('../../supabase/migrations/20260923164150_review_events_only.sql',import.meta.url),'utf8');
+        await db.exec(protection);
+        await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[OWNER]);
+        await db.exec('SET ROLE service_role');
+        for (const statement of [
+            "INSERT INTO public.review_states(word_id,user_id,due) VALUES($1,$2,current_date) ON CONFLICT(word_id) DO UPDATE SET reps=0",
+            'UPDATE public.review_states SET reps=0 WHERE word_id=$1 AND user_id=$2',
+            'DELETE FROM public.review_states WHERE word_id=$1 AND user_id=$2',
+        ]) {
+            await expect(asRole('authenticated',()=>db.query(statement,[WORD,OWNER]))).rejects.toMatchObject({code:'42501'});
+        }
+        const states=await asRole('authenticated',()=>db.query('SELECT * FROM public.review_states'));
+        expect(states.rows).toHaveLength(1);
+        await asRole('authenticated',()=>db.query('DELETE FROM public.words WHERE id=$1',[WORD]));
+        expect((await db.query('SELECT * FROM public.review_states')).rows).toHaveLength(0);
+        expect((await db.query('SELECT * FROM public.review_events')).rows).toHaveLength(1);
     });
 });

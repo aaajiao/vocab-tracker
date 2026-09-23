@@ -63,6 +63,11 @@ try {
     check(detail.data.events.length === 1 && detail.data.events[0].word_snapshot.word === 'Besichtigung', 'history includes actual word and one attempt');
     await call(`/sessions/${sessionId}`, accessToken, 'PATCH', { expected_version: detail.data.session.version, status: 'completed', summary: '成功完成看房沟通练习，独立使用 Besichtigung。' });
     await call(`/sessions/${sessionId}`, accessToken, 'PATCH', { expected_version: detail.data.session.version, summary: 'stale' }, 409);
+    // 独立 HTTP 请求经 Supabase 的连接池竞争同一词行，验证真实并发重试。
+    const concurrentEvent = { ...event, id: randomUUID(), session_id: null, practiced_at: new Date().toISOString() };
+    const concurrent = await Promise.all(Array.from({ length: 4 }, () => call('/events', accessToken, 'POST', concurrentEvent)));
+    check(concurrent.filter(value => !value.data.replayed).length === 1, 'parallel requests apply exactly once');
+    check(new Set(concurrent.map(value => value.data.state.reps)).size === 1, 'parallel replay sees one authoritative state');
     await call(`/tokens/${readOnly.data.token.id}`, jwt, 'DELETE');
     await call('/words', readToken, 'GET', undefined, 401);
     if (keep) {

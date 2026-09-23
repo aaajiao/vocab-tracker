@@ -32,9 +32,9 @@ export function useNetworkStatus({ userId, onSyncComplete }: UseNetworkStatusPro
 
     // Refresh pending count
     const refreshPendingCount = useCallback(async () => {
-        const count = await getPendingCount();
+        const count = await getPendingCount(userId);
         setPendingCount(count);
-    }, []);
+    }, [userId]);
 
     // Sync pending operations
     // 读取 ref 而非 state，因此 syncNow 保持稳定（不依赖 isOnline/isSyncing），不会成为过期闭包。
@@ -92,7 +92,7 @@ export function useNetworkStatus({ userId, onSyncComplete }: UseNetworkStatusPro
         if (!isOnline || !userId) return;
 
         const interval = setInterval(async () => {
-            const count = await getPendingCount();
+            const count = await getPendingCount(userId);
             if (count > 0) {
                 syncNow();
             }
