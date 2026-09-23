@@ -3,12 +3,11 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CodexConnectionPanel from './CodexConnectionPanel';
 import PracticeHistoryPanel from './PracticeHistoryPanel';
-import type { AccessTokenMetadata, LearningApiResult, LearningPreferences, PracticeSession, PracticeEvent } from '../services/learningApi';
+import type { AccessTokenMetadata, LearningApiResult, PracticeSession, PracticeEvent } from '../services/learningApi';
 
-const api = vi.hoisted(() => ({ getTokens: vi.fn(), getPreferences: vi.fn(), createToken: vi.fn(), revokeToken: vi.fn(), savePreferences: vi.fn(), getSessions: vi.fn(), getSession: vi.fn() }));
+const api = vi.hoisted(() => ({ getTokens: vi.fn(), getPreferences: vi.fn(), updateTokenScopes: vi.fn(), createToken: vi.fn(), revokeToken: vi.fn(), savePreferences: vi.fn(), getSessions: vi.fn(), getSession: vi.fn() }));
 vi.mock('../services/learningApi', () => ({ learningApi: api, learningErrorMessage: () => '请求失败，请重试。' }));
 
-const preferences: LearningPreferences = { language: 'de', timezone: 'Europe/Berlin', session_size: 10, duration_minutes: 10, correction_style: 'after_answer', interests: [] };
 const token: AccessTokenMetadata = { id: 'token-a', name: '我的 Codex', prefix: 'vt_prefix', scopes: ['vocabulary:read'], expires_at: '2099-01-01T00:00:00Z', revoked_at: null, last_used_at: null, created_at: '2026-09-23T00:00:00Z' };
 
 function deferred<T>() {
@@ -18,7 +17,7 @@ function deferred<T>() {
 }
 
 function practiceSession(id: string): PracticeSession {
-    return { id, language: 'de', mode: 'conversation', topic: `练习 ${id}`, word_ids: [], target_minutes: 10, status: 'active', summary: null, version: 1, created_at: '2026-09-23T00:00:00Z', updated_at: '2026-09-23T00:00:00Z', completed_at: null };
+    return { id, language: 'de', mode: 'conversation', topic: `练习 ${id}`, word_ids: [], sentence_ids: [], target_minutes: 10, status: 'active', summary: null, version: 1, created_at: '2026-09-23T00:00:00Z', updated_at: '2026-09-23T00:00:00Z', completed_at: null };
 }
 
 describe('learning panels request lifecycle', () => {
@@ -32,7 +31,6 @@ describe('learning panels request lifecycle', () => {
         document.body.append(container);
         root = createRoot(container);
         api.getTokens.mockResolvedValue({ data: [] });
-        api.getPreferences.mockResolvedValue({ data: preferences });
         api.getSessions.mockResolvedValue({ data: [practiceSession('a'), practiceSession('b')], meta: { has_more: false, next_offset: null } });
         api.getSession.mockResolvedValue({ data: { session: practiceSession('a'), events: [] } });
     });
@@ -70,6 +68,51 @@ describe('learning panels request lifecycle', () => {
         await act(async () => creation.resolve({ data: { token, access_token: 'vt_old_account_secret' } }));
         expect(container.querySelector('[aria-label="新创建的连接令牌"]')).toBeNull();
         expect(container.textContent).not.toContain('vt_old_account_secret');
+    });
+
+    it('starts with automatic SRS practice instead of preference decisions', async () => {
+        api.createToken.mockResolvedValue({ data: { token, access_token: 'vt_secret' } });
+        await act(async () => root.render(<CodexConnectionPanel userId="user-a" />));
+        expect(container.textContent).toContain('按记忆曲线优先复习到期单词');
+        expect(container.textContent).toContain('10 项练习');
+        expect(container.textContent).not.toContain('学习偏好');
+        expect(container.textContent).not.toContain('练习时长');
+        expect(api.getPreferences).not.toHaveBeenCalled();
+        await act(async () => container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+        expect(api.createToken).toHaveBeenCalledWith('user-a', { name: '我的 Codex', expires_in_days: 90, scopes: ['vocabulary:read', 'practice:write', 'vocabulary:write', 'sentences:write'] }, expect.any(AbortSignal));
+    });
+
+    it('upgrades an existing connection only after an explicit click and preserves its scopes', async () => {
+        const existing = { ...token, scopes: ['vocabulary:read', 'practice:write', 'sentences:write'] };
+        api.getTokens.mockResolvedValue({ data: [existing] });
+        const update = deferred<LearningApiResult<AccessTokenMetadata>>();
+        api.updateTokenScopes.mockReturnValue(update.promise);
+        await act(async () => root.render(<CodexConnectionPanel userId="user-a" />));
+        expect(api.updateTokenScopes).not.toHaveBeenCalled();
+        const button = container.querySelector<HTMLButtonElement>('[aria-label="允许 我的 Codex 保存新词"]')!;
+        await act(async () => { button.click(); button.click(); });
+        expect(api.updateTokenScopes).toHaveBeenCalledOnce();
+        expect(api.updateTokenScopes).toHaveBeenCalledWith('user-a', token.id, ['vocabulary:read', 'practice:write', 'sentences:write', 'vocabulary:write'], expect.any(AbortSignal));
+        await act(async () => update.resolve({ data: { ...token, scopes: ['vocabulary:read', 'practice:write', 'sentences:write', 'vocabulary:write'] } }));
+        expect(container.querySelector('[aria-label="允许 我的 Codex 保存新词"]')).toBeNull();
+        expect(container.textContent).toContain('无需重新连接 Codex');
+        expect(api.createToken).not.toHaveBeenCalled();
+        expect(container.querySelector('[aria-label="新创建的连接令牌"]')).toBeNull();
+    });
+
+    it('does not offer new permissions for expired or revoked connections', async () => {
+        api.getTokens.mockResolvedValue({ data: [{ ...token, id: 'revoked', revoked_at: '2026-01-01T00:00:00Z' }, { ...token, id: 'expired', expires_at: '2020-01-01T00:00:00Z' }] });
+        await act(async () => root.render(<CodexConnectionPanel userId="user-a" />));
+        expect(container.querySelector('[aria-label="允许 我的 Codex 保存新词"]')).toBeNull();
+        expect(container.textContent).toContain('已撤销');
+        expect(container.textContent).toContain('已过期');
+    });
+
+    it('labels bilingual sessions and includes sentence targets in the material count', async () => {
+        api.getSessions.mockResolvedValue({ data: [{ ...practiceSession('mixed'), language: 'mixed', word_ids: ['word-a'], sentence_ids: ['sentence-a', 'sentence-b'] }], meta: { has_more: false } });
+        await act(async () => root.render(<PracticeHistoryPanel userId="user-a" />));
+        expect(container.textContent).toContain('德语与英语');
+        expect(container.textContent).toContain('3 项素材');
     });
 
     it('does not replace a newer selected session with a slower old detail response', async () => {

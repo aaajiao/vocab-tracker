@@ -44,7 +44,7 @@ export function requireUuid(value: unknown): string {
 
 export function prepareBody(command: string, input: JsonObject): JsonObject {
     const body = { ...input };
-    if (['start', 'event', 'save-sentence'].includes(command)) body.id = requireUuid(body.id ?? randomUUID());
+    if (['start', 'event', 'save-sentence', 'add-word'].includes(command)) body.id = requireUuid(body.id ?? randomUUID());
     if (command === 'event') {
         body.word_id = requireUuid(body.word_id);
         if (body.session_id !== undefined && body.session_id !== null) body.session_id = requireUuid(body.session_id);
@@ -53,7 +53,11 @@ export function prepareBody(command: string, input: JsonObject): JsonObject {
         body.practiced_at ??= new Date().toISOString();
         body.timezone ??= Intl.DateTimeFormat().resolvedOptions().timeZone;
     }
-    if (command === 'start' && Array.isArray(body.word_ids)) body.word_ids = body.word_ids.map(requireUuid);
+    if (command === 'start') {
+        if (Array.isArray(body.word_ids)) body.word_ids = body.word_ids.map(requireUuid);
+        if (Array.isArray(body.sentence_ids)) body.sentence_ids = body.sentence_ids.map(requireUuid);
+    }
+    if (command === 'add-word' && body.category === undefined) body.category = '';
     if (command === 'finish') {
         if (!Number.isInteger(body.expected_version) || Number(body.expected_version) < 1) {
             throw new ClientError('INVALID_INPUT', '结束会话需要最新 expected_version；先 resume 读取。');

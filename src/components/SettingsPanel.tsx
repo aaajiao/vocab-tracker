@@ -62,7 +62,7 @@ function SettingsPanel({ apiKey, setApiKey, userEmail, userId }: SettingsPanelPr
         <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4 mb-6 space-y-4">
             <CodexConnectionPanel userId={userId} />
             {/* API Key Section */}
-            <div>
+            <div className="pt-3 border-t border-slate-200 dark:border-slate-700">
                 <h3 className="text-sm font-semibold mb-2 text-slate-800 dark:text-slate-100">API Key</h3>
                 <label className="block text-xs text-slate-500 mb-1">OpenAI API Key</label>
                 <div className="flex gap-2">

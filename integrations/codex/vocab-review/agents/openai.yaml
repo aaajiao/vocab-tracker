@@ -1,4 +1,4 @@
 interface:
   display_name: "生词本复习"
-  short_description: "连接 Vocab Tracker，开展英语德语情境练习并保存真实作答和学习进展"
-  default_prompt: "用 $vocab-review 从我的生词本挑几个今天要复习的德语词，带我练十分钟情境对话。"
+  short_description: "按线上复习计划选取词句，直接开始十项英语德语练习，也能添加新词和句子"
+  default_prompt: "用 $vocab-review 按我的生词本复习计划准备十项有变化的词句练习，一项一项带我练。"

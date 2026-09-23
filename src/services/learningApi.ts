@@ -1,7 +1,7 @@
 import type { ReviewGrade } from './srs';
 import { supabase } from '../supabaseClient';
 
-export type LearningScope = 'vocabulary:read' | 'practice:write' | 'sentences:write';
+export type LearningScope = 'vocabulary:read' | 'practice:write' | 'vocabulary:write' | 'sentences:write';
 export type CorrectionStyle = 'after_answer' | 'end_of_session';
 
 export interface LearningPreferences {
@@ -26,10 +26,11 @@ export interface AccessTokenMetadata {
 
 export interface PracticeSession {
     id: string;
-    language: 'en' | 'de';
+    language: 'en' | 'de' | 'mixed';
     mode: 'conversation' | 'recall' | 'cloze';
     topic: string;
     word_ids: string[];
+    sentence_ids: string[];
     target_minutes: number;
     status: 'active' | 'completed' | 'abandoned';
     summary: string | null;
@@ -176,6 +177,8 @@ export const learningApi = {
     },
     createToken: (userId: string, body: { name: string; scopes: LearningScope[]; expires_in_days: number }, signal?: AbortSignal) =>
         learningRequest<{ token: AccessTokenMetadata; access_token: string }>('/tokens', { method: 'POST', userId, body, signal }),
+    updateTokenScopes: (userId: string, id: string, scopes: LearningScope[], signal?: AbortSignal) =>
+        learningRequest<AccessTokenMetadata>(`/tokens/${encodeURIComponent(id)}`, { method: 'PATCH', userId, body: { scopes }, signal }),
     revokeToken: (userId: string, id: string, signal?: AbortSignal) =>
         learningRequest<unknown>(`/tokens/${encodeURIComponent(id)}`, { method: 'DELETE', userId, signal }),
     getPreferences: (userId: string, signal?: AbortSignal) => learningRequest<LearningPreferences>('/preferences', { userId, signal }),

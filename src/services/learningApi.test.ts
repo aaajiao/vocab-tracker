@@ -37,6 +37,17 @@ describe('learning API transport', () => {
         storage.mockRestore();
     });
 
+    it('updates token scopes through the authenticated account without rotating the token', async () => {
+        fetchMock.mockResolvedValueOnce(json({ data: { id: 'token-a', scopes: ['vocabulary:read', 'vocabulary:write'] } }));
+        const result = await learningApi.updateTokenScopes('user-a', 'token-a', ['vocabulary:read', 'vocabulary:write']);
+        expect(result.data.id).toBe('token-a');
+        expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/tokens/token-a');
+        const init = fetchMock.mock.calls[0][1];
+        expect(init?.method).toBe('PATCH');
+        expect(JSON.parse(init?.body as string)).toEqual({ scopes: ['vocabulary:read', 'vocabulary:write'] });
+        expect(init?.headers).toMatchObject({ Authorization: 'Bearer session-token' });
+    });
+
     it('rejects missing sessions before sending any request', async () => {
         auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
         await expect(learningApi.getTokens('user-a')).rejects.toMatchObject({ status: 401 });

@@ -8,9 +8,10 @@ import { SecureStore, loadCredentials, keychain, type Config, type PendingReques
 const HELP = `Vocab Tracker · Codex API helper
 configure --url https://your-site --storage keychain|file  (令牌在终端隐藏输入)
 status | logout | pending | retry <request-id> | discard <request-id>
+materials [--limit 10] [--language en|de] [--timezone Europe/Berlin]  (默认按在线复习计划选词并搭配收藏句)
 words | review | sentences | preferences | sessions | events  [--language de ...]
 resume <session-id>
-start | event | save-sentence | preferences-set  --json <file|->
+start | event | add-word | save-sentence | preferences-set  --json <file|->
 finish <session-id> --json <file|->
 列表参数: --limit --offset --language --q --category --ids --mode --timezone --status --word-id --session-id
 正文只接受 JSON 文件或标准输入；不接受令牌命令行参数。
@@ -202,6 +203,7 @@ export async function run(args: string[]): Promise<unknown> {
         return result;
     }
     const reads: Record<string, string[]> = {
+        materials: ['language', 'limit', 'timezone'],
         words: ['language', 'q', 'category', 'ids', 'limit', 'offset'],
         review: ['language', 'mode', 'timezone', 'limit', 'offset'],
         sentences: ['language', 'q', 'limit', 'offset'], preferences: [],
@@ -210,11 +212,14 @@ export async function run(args: string[]): Promise<unknown> {
     if (command in reads) {
         if (positional.length || Object.keys(flags).some(key => !reads[command].includes(key))) throw new ClientError('INVALID_ARGUMENT', '此查询不接受给定参数。');
         const query = new URLSearchParams();
+        if (command === 'materials') query.set('limit', '10');
         for (const [key, value] of Object.entries(flags)) query.set(key.replaceAll('-', '_'), value);
-        return client.request('GET', `/${command}${query.size ? `?${query}` : ''}`);
+        const path = command === 'materials' ? 'practice-materials' : command;
+        return client.request('GET', `/${path}${query.size ? `?${query}` : ''}`);
     }
     const writes: Record<string, { method: 'POST' | 'PATCH'; path: string }> = {
         start: { method: 'POST', path: '/sessions' }, event: { method: 'POST', path: '/events' },
+        'add-word': { method: 'POST', path: '/words' },
         'save-sentence': { method: 'POST', path: '/sentences' }, 'preferences-set': { method: 'PATCH', path: '/preferences' },
         finish: { method: 'PATCH', path: `/sessions/${command === 'finish' ? requireUuid(positional[0]) : ''}` },
     };

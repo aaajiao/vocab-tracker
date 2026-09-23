@@ -79,7 +79,7 @@ function AccountPracticeHistory({ userId }: { userId: string }) {
                 {visiblePage?.sessions.map((session) => <li key={session.id}>
                     <button type="button" onClick={() => setSelectedId((previous) => previous === session.id ? null : session.id)} aria-expanded={selectedId === session.id} aria-controls={selectedId === session.id ? 'practice-session-detail' : undefined} className={`w-full text-left rounded-lg border p-3 transition-colors focus-visible:ring-2 focus-visible:ring-indigo-400 ${selectedId === session.id ? 'border-indigo-300 dark:border-indigo-700 bg-indigo-50/60 dark:bg-indigo-950/30' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
                         <div className="flex items-start justify-between gap-3"><span className="text-sm font-medium text-slate-800 dark:text-slate-100 break-words">{session.topic || modeLabels[session.mode]}</span><span className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${session.status === 'active' ? 'text-indigo-700 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-950' : 'text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800'}`}>{statusLabels[session.status]}</span></div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">{formatDate(session.created_at)} · {session.language === 'de' ? '德语' : '英语'} · {modeLabels[session.mode]} · {session.word_ids.length} 个目标词</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">{formatDate(session.created_at)} · {session.language === 'mixed' ? '德语与英语' : session.language === 'de' ? '德语' : '英语'} · {modeLabels[session.mode]} · {session.word_ids.length + (session.sentence_ids?.length || 0)} 项素材</p>
                         {session.summary && <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-300 line-clamp-2 break-words">{session.summary}</p>}
                     </button>
                 </li>)}
@@ -96,7 +96,7 @@ function AccountPracticeHistory({ userId }: { userId: string }) {
                 {visibleDetail && <>
                     {visibleDetail.session.summary && <p className="text-sm leading-relaxed whitespace-pre-wrap break-words text-slate-700 dark:text-slate-300">{visibleDetail.session.summary}</p>}
                     {visibleDetail.session.status === 'active' && <p className="rounded-lg bg-indigo-50 dark:bg-indigo-950/30 p-3 text-xs text-indigo-700 dark:text-indigo-300">这次练习尚未结束。可以在 Codex 中说“继续上次的生词练习”。</p>}
-                    {visibleDetail.events.length === 0 && !detailLoading && <p className="text-xs text-slate-500 dark:text-slate-400">尚未保存逐词作答。仅展示过的词不会计入复习。</p>}
+                    {visibleDetail.events.length === 0 && !detailLoading && <p className="text-xs text-slate-500 dark:text-slate-400">{visibleDetail.session.word_ids.length === 0 && (visibleDetail.session.sentence_ids?.length || 0) > 0 ? '句子练习的反馈会保存在本次总结中，不计入单词复习排期。' : '尚未保存逐词作答。仅展示过的词不会计入复习。'}</p>}
                     {visibleDetail.truncated && <p className="text-xs text-amber-700 dark:text-amber-300">这次练习记录较多，当前显示前 1,000 条作答。</p>}
                     <ol className="space-y-3">
                         {visibleDetail.events.map((event) => <li key={event.id} className="rounded-lg bg-slate-50 dark:bg-slate-800/60 p-3 space-y-2">
