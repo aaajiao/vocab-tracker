@@ -10,6 +10,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:codex": "bun test tests/codex",
+    "test:all": "bun run test && bun run test:codex",
+    "codex:install": "bun scripts/install-codex-skill.ts",
+    "verify:api": "bun scripts/verify-learning-api.ts",
     "test:watch": "vitest"
   },
   "dependencies": {
