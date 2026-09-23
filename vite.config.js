@@ -3,6 +3,11 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// 默认仅本机可达；容器/LAN 调试显式开启，并只允许列出的自定义主机名。
+const devLanEnabled = process.env.VITE_DEV_LAN === '1'
+const devAllowedHosts = (process.env.VITE_DEV_ALLOWED_HOSTS || '')
+  .split(',').map(host => host.trim()).filter(Boolean)
+
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
@@ -91,28 +96,23 @@ export default defineConfig({
   // 注意：以下配置仅影响开发服务器，不影响 Vercel 生产部署。
   // ===========================================
   server: {
-    // Allow access from external hosts (0.0.0.0)
-    // 允许从外部主机访问（绑定 0.0.0.0）
-    host: true,
-
-    // Allow all hostnames (development only)
-    // 允许所有主机名访问（仅开发环境）
-    allowedHosts: true,
+    host: devLanEnabled ? '0.0.0.0' : '127.0.0.1',
+    allowedHosts: devAllowedHosts,
 
     // OpenAI API proxy (development only)
     // Vercel uses rewrites in vercel.json for production
     // OpenAI API 代理（仅开发环境）
     // Vercel 生产环境使用 vercel.json 中的 rewrites 配置
-        proxy: {
-            '/api/v1': {
-                target: 'http://127.0.0.1:3001',
-                changeOrigin: true,
-            },
-            '/api/openai': {
+    proxy: {
+      '/api/v1': {
+        target: 'http://127.0.0.1:3001',
+        changeOrigin: true,
+      },
+      '/api/openai': {
         target: 'https://api.openai.com',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/openai/, ''),
-        secure: false
+        secure: true
       }
     }
   }
