@@ -1,187 +1,69 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import {
-    addPendingWord,
-    setCachedWords,
-    getAllCachedWords,
-    getPendingAddWords,
-    getPendingOperations,
-    clearWordsCache,
-    markWordSynced,
-    markWordDeleted,
-    incrementOperationRetry,
-    mergePendingAdds,
-    selectWordsToMigrate,
-} from './wordsCache';
+import { describe, it, expect } from 'vitest';
 import type { Word } from '../types';
+import { addPendingWord, setCachedWords, getAllCachedWords, getPendingOperations, markWordDeleted, clearWordsCache, selectWordsToMigrate } from './wordsCache';
+import { acknowledgeMaterial, cancelUnsentMaterial, claimMaterial, enqueueMaterial, getMaterialOperations, materialRevision, discardMaterialOperation } from './materialStore';
+const word = (id: string = crypto.randomUUID(), patch: Partial<Word> = {}): Word => ({ id, word: 'Haus', meaning: '房子', language: 'de', example: 'Alt', exampleCn: '旧', category: '', date: '2026-09-23', timestamp: 1, ...patch });
 
-function makeWord(overrides: Partial<Word> = {}): Word {
-    return {
-        id: 'temp_1',
-        word: 'hello',
-        meaning: '你好',
-        language: 'en',
-        example: 'Say hello.',
-        exampleCn: '打招呼。',
-        category: 'daily',
-        date: '2026-05-13',
-        timestamp: 1715587200000,
-        ...overrides,
-    };
-}
-
-describe('wordsCache', () => {
-    beforeEach(async () => {
-        await clearWordsCache();
+describe('账号隔离的词汇缓存与操作', () => {
+    it('无账号无法读到任何材料；相同记录ID在两个账号中互不覆盖', async () => {
+        const a = crypto.randomUUID(), b = crypto.randomUUID(), id = crypto.randomUUID();
+        await setCachedWords([word(id)], a); await setCachedWords([word(id, { meaning: 'B自己的释义' })], b);
+        expect(await getAllCachedWords()).toEqual([]);
+        expect((await getAllCachedWords(a))[0].meaning).toBe('房子');
+        expect((await getAllCachedWords(b))[0].meaning).toBe('B自己的释义');
+        await expect(addPendingWord(word())).rejects.toThrow();
+        await clearWordsCache(a); expect(await getAllCachedWords(a)).toEqual([]); expect(await getAllCachedWords(b)).toHaveLength(1);
     });
-
-    describe('setCachedWords', () => {
-        it('preserves pending offline writes when refreshing from server', async () => {
-            // 1. user adds a word offline
-            const offlineWord = makeWord({ id: 'temp_offline_1', word: 'apple', meaning: '苹果' });
-            await addPendingWord(offlineWord);
-
-            // 2. server returns its current rows (which DON'T include the offline word yet)
-            const serverWord = makeWord({ id: 'server_uuid_1', word: 'banana', meaning: '香蕉' });
-            await setCachedWords([serverWord]);
-
-            // 3. cache should still contain BOTH — server word + the still-pending offline write
-            const cached = await getAllCachedWords();
-            const ids = cached.map(w => w.id).sort();
-            expect(ids).toEqual(['server_uuid_1', 'temp_offline_1']);
-
-            // 4. and the pending op queue should still be intact (not flushed by setCachedWords)
-            const pending = await getPendingOperations();
-            expect(pending).toHaveLength(1);
-            expect(pending[0].type).toBe('add_word');
-        });
-
-        it('replaces synced rows with the latest server snapshot', async () => {
-            // Pre-existing synced row should be replaced when setCachedWords runs.
-            const oldServerWord = makeWord({ id: 'server_1', word: 'cat', meaning: '旧译' });
-            await setCachedWords([oldServerWord]);
-
-            const newServerWord = makeWord({ id: 'server_1', word: 'cat', meaning: '猫' });
-            await setCachedWords([newServerWord]);
-
-            const cached = await getAllCachedWords();
-            expect(cached).toHaveLength(1);
-            expect(cached[0].meaning).toBe('猫');
-        });
+    it('空云端是有效快照，但不会移除待新增，云端旧行也不能复活待删除', async () => {
+        const owner = crypto.randomUUID(), old = word(), added = word(undefined, { word: 'neu' });
+        await setCachedWords([old], owner); await markWordDeleted(old.id, owner); await addPendingWord(added, owner);
+        await setCachedWords([old], owner); expect((await getAllCachedWords(owner)).map(item => item.id)).toEqual([added.id]);
+        await setCachedWords([], owner); expect((await getAllCachedWords(owner)).map(item => item.id)).toEqual([added.id]);
+        expect(await getPendingOperations(owner)).toHaveLength(2);
     });
-
-    describe('markWordSynced', () => {
-        it('replaces the temp ID with the server-assigned UUID', async () => {
-            const tempWord = makeWord({ id: 'temp_xyz', word: 'dog' });
-            await addPendingWord(tempWord);
-
-            await markWordSynced('temp_xyz', 'server_uuid_xyz');
-
-            const cached = await getAllCachedWords();
-            expect(cached).toHaveLength(1);
-            expect(cached[0].id).toBe('server_uuid_xyz');
-            expect(cached.map(w => w.id)).not.toContain('temp_xyz');
-        });
-
-        it('keeps the same ID when no new ID is provided', async () => {
-            const word = makeWord({ id: 'server_already', word: 'fish' });
-            await addPendingWord(word);
-
-            await markWordSynced('server_already');
-
-            const cached = await getAllCachedWords();
-            expect(cached).toHaveLength(1);
-            expect(cached[0].id).toBe('server_already');
-        });
+    it('尚未发送的新增/删除可原子取消，已尝试新增则保留后续幂等删除', async () => {
+        const owner = crypto.randomUUID(), value = word();
+        await addPendingWord(value, owner); await markWordDeleted(value.id, owner);
+        expect(await getPendingOperations(owner)).toEqual([]);
+        await addPendingWord(value, owner); await claimMaterial(owner, value.id); await markWordDeleted(value.id, owner);
+        const operations = await getPendingOperations(owner);
+        expect(operations).toHaveLength(2); expect(operations[1].depends_on).toBe(value.id);
+        expect(await getAllCachedWords(owner)).toEqual([]);
+        expect(await cancelUnsentMaterial(owner, 'word', value.id, 'delete')).toBe(true);
+        expect(await getAllCachedWords(owner)).toHaveLength(1);
     });
-
-    // 服务器数据覆盖内存前需合并本地 pending_add 项
-    describe('getPendingAddWords', () => {
-        it('returns only pending_add words, excluding synced and pending_delete', async () => {
-            await addPendingWord(makeWord({ id: 'temp_a', word: 'ant' }));
-            await setCachedWords([makeWord({ id: 'server_b', word: 'bee' })]); // synced，保留上面的 pending
-
-            const pendingAdds = await getPendingAddWords();
-            expect(pendingAdds.map(w => w.id)).toEqual(['temp_a']);
-        });
+    it('清缓存仍显示待更新内容，并仅修改例句而不覆盖其他最新字段', async () => {
+        const owner = crypto.randomUUID(), initial = word();
+        await setCachedWords([initial], owner);
+        await enqueueMaterial({ id: crypto.randomUUID(), user_id: owner, kind: 'word', action: 'update', record_id: initial.id, record: initial, body: { example: 'Neu', example_cn: '新' } });
+        await setCachedWords([{ ...initial, meaning: '云端新释义', etymology: '新词源' }], owner);
+        expect((await getAllCachedWords(owner))[0]).toMatchObject({ meaning: '云端新释义', etymology: '新词源', example: 'Neu' });
+        await clearWordsCache(owner); expect((await getAllCachedWords(owner))[0]).toMatchObject({ id: initial.id, example: 'Neu' });
+        expect(await getPendingOperations(owner)).toHaveLength(1);
     });
-
-    describe('mergePendingAdds (纯函数)', () => {
-        it('appends pending adds not present on the server, sorted by timestamp desc', () => {
-            const server = [makeWord({ id: 's1', word: 'sun', timestamp: 100 })];
-            const pending = [makeWord({ id: 'temp_x', word: 'moon', timestamp: 200 })];
-
-            const merged = mergePendingAdds(server, pending);
-            expect(merged.map(w => w.id)).toEqual(['temp_x', 's1']);
-        });
-
-        it('drops a pending add already present on the server (deduped by id)', () => {
-            const server = [makeWord({ id: 'same', word: 'star', timestamp: 100 })];
-            const pending = [makeWord({ id: 'same', word: 'star', timestamp: 100 })];
-
-            const merged = mergePendingAdds(server, pending);
-            expect(merged).toHaveLength(1);
-            expect(merged[0].id).toBe('same');
-        });
+    it('快照与新增回执交错时，过期读取不会移除刚确认的词', async () => {
+        const owner = crypto.randomUUID(), value = word(); const revision = await materialRevision(owner, 'word');
+        await addPendingWord(value, owner); const op = (await getPendingOperations(owner))[0]; await acknowledgeMaterial(op, value);
+        expect(await setCachedWords([], owner, revision)).toBe(false); expect(await getAllCachedWords(owner)).toHaveLength(1);
     });
-
-    // 迁移前按服务器数据大小写不敏感去重
-    describe('selectWordsToMigrate (纯函数)', () => {
-        it('filters out words already on the server, case-insensitively on word+language', () => {
-            const local = [
-                makeWord({ id: 'l1', word: 'Apple', language: 'en' }),
-                makeWord({ id: 'l2', word: 'birne', language: 'de' }),
-            ];
-            const server = [makeWord({ id: 's1', word: 'apple', language: 'en' })];
-
-            const toMigrate = selectWordsToMigrate(local, server);
-            expect(toMigrate.map(w => w.word)).toEqual(['birne']);
-        });
-
-        it('dedupes duplicates within the local list itself', () => {
-            const local = [
-                makeWord({ id: 'l1', word: 'Cat', language: 'en' }),
-                makeWord({ id: 'l2', word: 'cat', language: 'en' }),
-            ];
-            const toMigrate = selectWordsToMigrate(local, []);
-            expect(toMigrate).toHaveLength(1);
-        });
-
-        it('treats same word in different languages as distinct', () => {
-            const local = [
-                makeWord({ id: 'l1', word: 'die', language: 'en' }),
-                makeWord({ id: 'l2', word: 'die', language: 'de' }),
-            ];
-            const toMigrate = selectWordsToMigrate(local, []);
-            expect(toMigrate).toHaveLength(2);
-        });
+    it('去重回执无论早于还是晚于后继入队，都使用云端真实ID', async () => {
+        for (const late of [false, true]) {
+            const owner = crypto.randomUUID(), value = word(), canonical = word();
+            await addPendingWord(value, owner); const add = (await getPendingOperations(owner))[0];
+            if (!late) await acknowledgeMaterial(add, canonical);
+            const updateId = crypto.randomUUID();
+            await enqueueMaterial({ id: updateId, user_id: owner, kind: 'word', action: 'update', record_id: value.id, record: value, body: { example: 'n', example_cn: '新' }, depends_on: add.id });
+            if (late) await acknowledgeMaterial(add, canonical);
+            expect((await getPendingOperations(owner))[0].record_id).toBe(canonical.id);
+        }
     });
-
-    // 删除仍未同步的 temp id 词走取消路径——markWordDeleted 对 pending_add
-    // 应移除本地记录并撤销待同步的新增操作（不产生 delete 操作）
-    describe('markWordDeleted on a pending_add word (取消路径)', () => {
-        it('removes the word and its add op, leaving no delete op', async () => {
-            await addPendingWord(makeWord({ id: 'temp_cancel', word: 'owl' }));
-
-            await markWordDeleted('temp_cancel');
-
-            const cached = await getAllCachedWords();
-            expect(cached.map(w => w.id)).not.toContain('temp_cancel');
-
-            const pending = await getPendingOperations();
-            expect(pending).toHaveLength(0);
-        });
+    it('丢弃失败新增一并移除未发送的依赖请求，不留下404链条', async () => {
+        const owner = crypto.randomUUID(), value = word(); await addPendingWord(value, owner);
+        await enqueueMaterial({ id: crypto.randomUUID(), user_id: owner, kind: 'word', action: 'update', record_id: value.id, record: value, body: { example: 'n', example_cn: '' } });
+        await discardMaterialOperation(owner, value.id); expect(await getMaterialOperations(owner)).toEqual([]); expect(await getAllCachedWords(owner)).toEqual([]);
     });
-
-    // 重试次数持久化
-    describe('incrementOperationRetry', () => {
-        it('increments and persists retryCount, returning the new value', async () => {
-            await addPendingWord(makeWord({ id: 'temp_r', word: 'pig' }));
-
-            expect(await incrementOperationRetry('add_temp_r')).toBe(1);
-            expect(await incrementOperationRetry('add_temp_r')).toBe(2);
-
-            const pending = await getPendingOperations();
-            expect(pending[0].retryCount).toBe(2);
-        });
+    it('旧数据去重纯函数仍保持词形并区分语言', () => {
+        const items = [word('1', { word: 'Haus' }), word('2', { word: 'haus' }), word('3', { word: 'Haus', language: 'en' })];
+        expect(selectWordsToMigrate(items, [])).toHaveLength(2);
     });
 });

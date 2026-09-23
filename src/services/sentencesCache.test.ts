@@ -1,113 +1,23 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import {
-    addPendingSentence,
-    getPendingSentenceOperations,
-    getAllCachedSentences,
-    markSentenceDeleted,
-    incrementSentenceOperationRetry,
-    clearSentencesCache,
-    withSentenceDefaults,
-} from './sentencesCache';
+import { describe, expect, it } from 'vitest';
 import type { SavedSentence } from '../types';
-
-function makeSentence(overrides: Partial<SavedSentence> = {}): SavedSentence {
-    return {
-        id: 'temp_1',
-        sentence: 'The cat sleeps.',
-        sentence_cn: '猫在睡觉。',
-        language: 'en',
-        scene: null,
-        source_type: 'word',
-        source_words: ['cat'],
-        created_at: '2026-05-13T00:00:00.000Z',
-        ...overrides,
-    };
-}
-
-describe('sentencesCache', () => {
-    beforeEach(async () => {
-        await clearSentencesCache();
+import { addPendingSentence, getAllCachedSentences, setCachedSentences, clearSentencesCache, markSentenceDeleted, withSentenceDefaults, sentenceBody } from './sentencesCache';
+import { getMaterialOperations } from './materialStore';
+const sentence = (): SavedSentence => ({ id: crypto.randomUUID(), sentence: 'Ich lerne.', sentence_cn: '我在学习。', language: 'de', scene: null, source_type: 'input', source_words: [], keywords: [{ word: 'lernen', meaning: '学习', partOfSpeech: 'verb' }], grammar: [{ point: '现在时', explanation: '动词变位' }], created_at: '2026-09-23T10:00:00Z' });
+describe('句子缓存', () => {
+    it('完整保留分析信息、词源类型与原创建时间，账号隔离', async () => {
+        const a = crypto.randomUUID(), b = crypto.randomUUID(), value = sentence(); await addPendingSentence(value, a);
+        expect(await getAllCachedSentences(b)).toEqual([]); expect(await getAllCachedSentences()).toEqual([]);
+        expect((await getAllCachedSentences(a))[0]).toEqual(value);
+        expect((await getMaterialOperations(a))[0].body).toEqual(sentenceBody(value));
     });
-
-    // 句子侧重试次数持久化，与词汇侧对称
-    describe('incrementSentenceOperationRetry', () => {
-        it('increments and persists retryCount, returning the new value', async () => {
-            await addPendingSentence(makeSentence({ id: 'temp_s' }));
-
-            expect(await incrementSentenceOperationRetry('add_temp_s')).toBe(1);
-            expect(await incrementSentenceOperationRetry('add_temp_s')).toBe(2);
-
-            const pending = await getPendingSentenceOperations();
-            expect(pending[0].retryCount).toBe(2);
-        });
-
-        it('returns 0 for an unknown operation id', async () => {
-            expect(await incrementSentenceOperationRetry('add_missing')).toBe(0);
-        });
+    it('刷新和清缓存都保留离线新增，删除标记在刷新后仍隐藏', async () => {
+        const owner = crypto.randomUUID(), value = sentence(), other = sentence();
+        await setCachedSentences([value], owner); await markSentenceDeleted(value.id, owner); await addPendingSentence(other, owner);
+        await setCachedSentences([value], owner); expect((await getAllCachedSentences(owner)).map(item => item.id)).toEqual([other.id]);
+        await clearSentencesCache(owner); expect(await getAllCachedSentences(owner)).toHaveLength(1);
     });
-
-    // 删除仍未同步的 temp id 句子走取消路径——markSentenceDeleted 对 pending_add
-    // 应移除本地记录并撤销待同步的新增操作（不产生 delete 操作）。
-    // 支撑 useSentences.unsaveSentence 的 temp id 分支，避免离线句子在线删除后复活。
-    describe('markSentenceDeleted on a pending_add sentence (取消路径)', () => {
-        it('removes the sentence and its add op, leaving no delete op', async () => {
-            await addPendingSentence(makeSentence({ id: 'temp_cancel' }));
-
-            await markSentenceDeleted('temp_cancel');
-
-            const cached = await getAllCachedSentences();
-            expect(cached.map(s => s.id)).not.toContain('temp_cancel');
-
-            const pending = await getPendingSentenceOperations();
-            expect(pending).toHaveLength(0);
-        });
-    });
-
-    // 句子输入一等公民：读回时 keywords/grammar 兜底
-    describe('withSentenceDefaults', () => {
-        it('给缺失(undefined)的 keywords/grammar/source_words 兜底为空数组', () => {
-            const row = makeSentence({ source_type: 'input' });
-            delete (row as { keywords?: unknown }).keywords;
-            delete (row as { grammar?: unknown }).grammar;
-            delete (row as { source_words?: unknown }).source_words;
-
-            const result = withSentenceDefaults(row);
-
-            expect(result.keywords).toEqual([]);
-            expect(result.grammar).toEqual([]);
-            expect(result.source_words).toEqual([]);
-        });
-
-        it('把 null 兜底为空数组', () => {
-            const row = makeSentence({
-                keywords: null as unknown as SavedSentence['keywords'],
-                grammar: null as unknown as SavedSentence['grammar'],
-                source_words: null as unknown as string[],
-            });
-
-            const result = withSentenceDefaults(row);
-
-            expect(result.keywords).toEqual([]);
-            expect(result.grammar).toEqual([]);
-            expect(result.source_words).toEqual([]);
-        });
-
-        it('保留已有的 keywords/grammar 并不改动其他字段', () => {
-            const row = makeSentence({
-                source_type: 'input',
-                sentence: 'Original CASE kept.',
-                keywords: [{ word: 'lieben', meaning: '爱', partOfSpeech: 'verb' }],
-                grammar: [{ point: '宾格', explanation: 'dich 是 du 的宾格' }],
-                source_words: ['lieben'],
-            });
-
-            const result = withSentenceDefaults(row);
-
-            expect(result.keywords).toHaveLength(1);
-            expect(result.keywords![0].word).toBe('lieben');
-            expect(result.grammar![0].point).toBe('宾格');
-            expect(result.sentence).toBe('Original CASE kept.');
-            expect(result.source_type).toBe('input');
-        });
+    it('老字段为空时提供数组缺省值', () => {
+        const result = withSentenceDefaults({ ...sentence(), keywords: null, grammar: undefined, source_words: null } as unknown as SavedSentence);
+        expect(result.keywords).toEqual([]); expect(result.grammar).toEqual([]); expect(result.source_words).toEqual([]);
     });
 });

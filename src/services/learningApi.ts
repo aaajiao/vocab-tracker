@@ -100,7 +100,7 @@ export function learningErrorMessage(error: unknown): string {
 }
 
 /** 使用网站登录会话访问同源 API；个人令牌只在创建时返回，不在浏览器持久化。 */
-export async function learningRequest<T>(path: string, options: LearningRequestOptions = {}): Promise<LearningApiResult<T>> {
+async function performLearningRequest<T>(path: string, options: LearningRequestOptions = {}): Promise<LearningApiResult<T>> {
     if (!/^\/[a-z][a-z0-9/?=&,%_:-]*$/i.test(path) || path.includes('//')) {
         throw new LearningApiError('invalid_path', '无效的学习服务地址。');
     }
@@ -158,6 +158,25 @@ export async function learningRequest<T>(path: string, options: LearningRequestO
         throw new LearningApiError('invalid_response', '学习服务返回了无效内容，请刷新后再试。');
     }
     return payload as LearningApiResult<T>;
+}
+
+export const LEARNING_REQUEST_TIMEOUT_MS = 15000;
+/** 一个请求（含登录读取、刷新和响应解析）共享期限；调用方取消仍立即生效。 */
+export async function learningRequest<T>(path: string, options: LearningRequestOptions = {}): Promise<LearningApiResult<T>> {
+    const controller = new AbortController();
+    const cancel = () => controller.abort(options.signal?.reason);
+    if (options.signal?.aborted) cancel(); else options.signal?.addEventListener('abort', cancel, { once: true });
+    const timer = setTimeout(() => controller.abort(new LearningApiError('timeout', '连接超时，请稍后重试；待同步请求仍保留原编号。')), LEARNING_REQUEST_TIMEOUT_MS);
+    let abort!: () => void;
+    const aborted = new Promise<never>((_resolve, reject) => {
+        abort = () => reject(controller.signal.reason);
+        if (controller.signal.aborted) abort(); else controller.signal.addEventListener('abort', abort, { once: true });
+    });
+    try {
+        return await Promise.race([performLearningRequest<T>(path, { ...options, signal: controller.signal }), aborted]);
+    } finally {
+        clearTimeout(timer); options.signal?.removeEventListener('abort', cancel); controller.signal.removeEventListener('abort', abort);
+    }
 }
 
 export const learningApi = {

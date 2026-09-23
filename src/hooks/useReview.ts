@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { Word, ReviewGrade } from '../types';
 import { previewIntervals, addDays } from '../services/srs';
-import { getAll as getAllReviewStates, getPending as getLegacyPending, upsert as saveCanonicalState, remove as removeReviewCache, fromReviewRow, getReviewTimezone, saveReviewTimezone, type CachedReviewState } from '../services/reviewCache';
-import { enqueueReviewEvent, getReviewEvents, projectReviewStates, syncReviewEvents, removeReviewEventsForWord, type ReviewEventInput } from '../services/reviewEventQueue';
+import { getAll as getAllReviewStates, getPending as getLegacyPending, upsert as saveCanonicalState, fromReviewRow, getReviewTimezone, saveReviewTimezone, type CachedReviewState } from '../services/reviewCache';
+import { enqueueReviewEvent, getReviewEvents, projectReviewStates, syncReviewEvents, type ReviewEventInput } from '../services/reviewEventQueue';
 import { learningRequest, learningErrorMessage, LearningApiError, type ApiReviewState } from '../services/learningApi';
 
 const SESSION_LIMIT = 50;
@@ -45,7 +45,7 @@ interface UseReviewReturn {
     startAheadSession: () => void;
     nextRound: () => void;
     endSession: () => void;
-    gradeWord: (wordId: string, grade: ReviewGrade) => Promise<void>;
+    gradeWord: (wordId: string, grade: ReviewGrade) => Promise<boolean>;
     previewFor: (wordId: string) => { forgot: number; fuzzy: number; known: number } | null;
     removeReviewState: (wordId: string) => void;
     refreshFromServer: () => Promise<void>;
@@ -194,15 +194,15 @@ export function useReview({ userId, words, wordsLoading = false, isOnline = true
     const endSession = useCallback(() => commitSession(null), [commitSession]);
 
     const gradeWord = useCallback(async (wordId: string, grade: ReviewGrade) => {
-        if (!userId || userRef.current !== userId || gradingRef.current || wordId.startsWith('temp_')) return;
+        if (!userId || userRef.current !== userId || gradingRef.current || wordId.startsWith('temp_')) return false;
         const attemptSession = sessionRef.current;
-        if (!attemptSession || attemptSession.cards[attemptSession.index]?.id !== wordId) return;
+        if (!attemptSession || attemptSession.cards[attemptSession.index]?.id !== wordId) return false;
         gradingRef.current = true;
         const generation = accountGeneration.current;
         const event: ReviewEventInput = { id: crypto.randomUUID(), word_id: wordId, grade, source: 'web', practiced_at: new Date().toISOString(), timezone: timezoneRef.current.userId === userId ? timezoneRef.current.timezone : deviceTimezone() };
         try {
             await enqueueReviewEvent(userId, event);
-            if (!mountedRef.current || userRef.current !== userId || generation !== accountGeneration.current) return;
+            if (!mountedRef.current || userRef.current !== userId || generation !== accountGeneration.current) return false;
             // 事务已提交，此时才能显示已完成；预测仅留在内存，不把它写回权威缓存。
             const projected = projectReviewStates(statesRef.current, [{ sequence: 0, user_id: userId, event, status: 'pending' }]);
             statesRef.current = projected;
@@ -211,23 +211,23 @@ export function useReview({ userId, words, wordsLoading = false, isOnline = true
             callbacks.current.onPendingChange?.();
         } catch {
             if (mountedRef.current && userRef.current === userId) callbacks.current.onError?.('无法保存这次作答，卡片尚未前进。请检查本机存储后重试。');
-            return;
+            return false;
         } finally {
             if (userRef.current === userId && generation === accountGeneration.current) gradingRef.current = false;
         }
         if (isOnline && mountedRef.current && userRef.current === userId) void refreshFromServer();
+        return true;
     }, [userId, isOnline, loadProjection, commitSession, refreshFromServer]);
 
     const previewFor = useCallback((wordId: string) => {
         const state = statesRef.current.find((entry) => entry.wordId === wordId);
         return state ? previewIntervals(state, todayStr(timezoneRef.current.timezone)) : null;
     }, []);
-    const removeReviewState = useCallback((wordId: string) => {
+    const removeReviewState = useCallback((_wordId: string) => {
         if (!userId) return;
-        statesRef.current = statesRef.current.filter((state) => state.wordId !== wordId);
-        setView({ userId, states: statesRef.current });
-        void Promise.all([removeReviewCache(wordId, userId), removeReviewEventsForWord(userId, wordId)]).then(() => callbacks.current.onPendingChange?.()).catch(() => callbacks.current.onError?.('本地复习记录清理失败，请刷新后再试。'));
-    }, [userId]);
+        // 本机删除仍可撤销。词卡可见性由 words 决定，持久化作答与排期留到云端确认删除再清理。
+        void loadProjection(userId).then(() => callbacks.current.onPendingChange?.()).catch(() => callbacks.current.onError?.('本地复习记录读取失败，请刷新后再试。'));
+    }, [userId, loadProjection]);
 
     const isSessionFinished = session !== null && session.index >= session.cards.length;
     const currentCard = session && !isSessionFinished ? session.cards[session.index] ?? null : null;

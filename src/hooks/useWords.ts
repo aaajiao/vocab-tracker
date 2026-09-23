@@ -1,526 +1,105 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { supabase } from '../supabaseClient';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import type { Word } from '../types';
 import { deleteCachedAudio, generateCacheKey } from '../services/audioCache';
-import {
-    getAllCachedWords,
-    getPendingAddWords,
-    mergePendingAdds,
-    selectWordsToMigrate,
-    setCachedWords,
-    addPendingWord,
-    markWordDeleted,
-    updateCachedWord
-} from '../services/wordsCache';
+import { addPendingWord, markWordDeleted, wordBody } from '../services/wordsCache';
+import { getMaterialOperations, readMaterials, cancelUnsentMaterial, enqueueMaterial, materialConfirmed } from '../services/materialStore';
+import { retryMaterialOperation, syncMaterialOperations, wordFromApi } from '../services/materialQueue';
+import { useMaterialCollection } from './useMaterialCollection';
 
-// Supabase 返回的 words 表行类型（snake_case 列名）
-interface SupabaseWordRow {
-    id: string;
-    user_id: string;
-    word: string;
-    meaning: string;
-    language: 'en' | 'de';
-    example: string | null;
-    example_cn: string | null;
-    category: string | null;
-    etymology: string | null;
-    date: string;
-    created_at: string;
-}
-
-// 将 Supabase 行映射为内部 Word（三处加载逻辑共用）
-function formatWordRow(w: SupabaseWordRow): Word {
-    return {
-        id: w.id,
-        word: w.word,
-        meaning: w.meaning,
-        language: w.language,
-        example: w.example || '',
-        exampleCn: w.example_cn || '',
-        category: (w.category || '') as Word['category'],
-        etymology: w.etymology || '',
-        date: w.date,
-        timestamp: new Date(w.created_at).getTime()
-    };
-}
-
-interface UseWordsProps {
-    userId: string | undefined;
-    isOnline?: boolean;
-    onLoadComplete?: () => void;
-    showToast?: (type: 'success' | 'error' | 'info', message: string) => void;
-    onPendingChange?: () => void;
-}
-
-interface UseWordsReturn {
-    words: Word[];
-    loading: boolean;
-    syncing: boolean;
-    addWord: (newWord: Omit<Word, 'id' | 'timestamp'>, options?: { silent?: boolean }) => Promise<void>;
-    addWords: (newWords: Omit<Word, 'id' | 'timestamp'>[]) => Promise<void>;
-    deleteWord: (id: string) => Promise<Word | null>;
-    updateWordExample: (id: string, example: string, exampleCn: string) => Promise<void>;
-    restoreWord: (word: Word) => Promise<void>;
-    getFilteredWords: (activeTab: string, searchQuery: string, todayFilter: boolean) => Word[];
-    getGroupedByDate: (filteredWords: Word[]) => Record<string, Word[]>;
-    stats: { total: number; en: number; de: number; today: number };
-    refreshFromServer: () => Promise<void>;
-}
-
-export function useWords({ userId, isOnline = true, onLoadComplete, showToast, onPendingChange }: UseWordsProps): UseWordsReturn {
-    const [words, setWords] = useState<Word[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [syncing, setSyncing] = useState(false);
-
-    // 镜像最新 words，供 refreshFromServer 判断本地是否非空（避免闭包过期）
-    const wordsRef = useRef(words);
-    useEffect(() => { wordsRef.current = words; }, [words]);
-
-    // Load words - first from cache, then from server if online
-    useEffect(() => {
-        if (!userId) {
-            setLoading(false);
-            return;
-        }
-
-        const loadWords = async () => {
-            setLoading(true);
-
-            // Step 1: Load from cache first (instant display)
-            const cachedWords = await getAllCachedWords();
-            if (cachedWords.length > 0) {
-                setWords(cachedWords);
-            }
-
-            // Step 2: If online, fetch from server and update cache
-            if (isOnline) {
-                const { data, error } = await supabase
-                    .from('words')
-                    .select('*')
-                    .eq('user_id', userId)
-                    .order('created_at', { ascending: false });
-
-                if (error) {
-                    console.error('Load error:', error);
-                    if (cachedWords.length === 0) {
-                        showToast?.('error', '加载词汇失败');
-                    }
-                } else {
-                    const formatted: Word[] = (data || []).map(formatWordRow);
-
-                    // 防御：服务器「成功但返回空」而本地缓存非空时，判为重连后 RLS/token 瞬时竞态，
-                    // 不用空覆盖内存与缓存——否则整列表瞬间清空、需重启才恢复。真正的空账户本地也为空，不误伤。
-                    // 代价：极少数「在另一设备清空全部单词」场景，本设备需下次非空同步或手动清缓存才反映。
-                    if (formatted.length === 0 && cachedWords.length > 0) {
-                        console.warn('Words: server returned empty while local cache non-empty; skipping overwrite (suspected transient auth race)');
-                    } else {
-                        // 合并本地 pending_add（离线新增、尚未同步）项，避免整体覆盖内存后离线词从 UI 消失
-                        const pendingAdds = await getPendingAddWords();
-                        setWords(mergePendingAdds(formatted, pendingAdds));
-
-                        // Update cache with server data（setCachedWords 内部会保留 pending 项）
-                        await setCachedWords(formatted);
-
-                        // Migrate localStorage if needed（传入服务器词汇用于去重）
-                        await migrateLocalStorage(userId, formatted);
-                    }
-                }
-            } else if (cachedWords.length === 0) {
-                showToast?.('info', '离线模式 · 无缓存数据');
-            }
-
-            setLoading(false);
-            onLoadComplete?.();
-        };
-
-        loadWords();
-    }, [userId, isOnline]);
-
-    // Refresh from server
-    const refreshFromServer = useCallback(async () => {
-        if (!userId || !isOnline) return;
-
-        const { data, error } = await supabase
-            .from('words')
-            .select('*')
-            .eq('user_id', userId)
-            .order('created_at', { ascending: false });
-
-        if (!error && data) {
-            const formatted: Word[] = data.map(formatWordRow);
-            // 防御：服务器「成功但返回空」而本地内存非空时（重连后触发的 refresh 尤其可能撞上 RLS/token
-            // 瞬时竞态），跳过，不用空覆盖内存与缓存。真正全删本地内存也已为空，不受影响。见加载副作用同款注释。
-            if (formatted.length === 0 && wordsRef.current.length > 0) {
-                console.warn('Words: refresh returned empty while local non-empty; skipping overwrite (suspected transient auth race)');
-                return;
-            }
-            // 合并本地 pending_add 项：同步失败时仍保留未同步词，不必等冷启动才复现
-            const pendingAdds = await getPendingAddWords();
-            setWords(mergePendingAdds(formatted, pendingAdds));
-            await setCachedWords(formatted);
-        }
-    }, [userId, isOnline]);
-
-    // 迁移 localStorage 旧数据到云端。
-    // 返回 true 表示全部成功（或无需迁移），false 表示有失败——此时保留 localStorage 供下次重试，
-    // 且不弹成功提示。words 表无 UNIQUE 约束，故用 insert 而非 upsert，并先按服务器数据去重。
-    const migrateLocalStorage = async (uid: string, serverWords: Word[]): Promise<boolean> => {
-        const localData = localStorage.getItem('vocab-words-v4');
-        if (!localData) return true;
-
-        let localWords: Word[];
+interface UseWordsProps { userId: string | undefined; isOnline?: boolean; onLoadComplete?: () => void; showToast?: (type: 'success' | 'error' | 'info', message: string) => void; onPendingChange?: () => void }
+type NewWord = Omit<Word, 'id' | 'timestamp'>;
+export function useWords({ userId, isOnline = true, onLoadComplete, showToast, onPendingChange }: UseWordsProps) {
+    const { values: words, valuesRef, pendingIds: pendingWordIds, loading, isCurrent, loadLocal, refreshFromServer } = useMaterialCollection<Word>({ userId, isOnline, kind: 'word', decode: wordFromApi, onLoadComplete, onError: message => showToast?.('error', message) });
+    const [busy, setBusy] = useState<{ owner?: string; count: number }>({ owner: userId, count: 0 });
+    const intents = useRef(new Map<string, string>());
+    const pendingNotice = () => { if (isCurrent()) onPendingChange?.(); };
+    const save = useCallback(async (input: NewWord, options: { silent?: boolean; restoreId?: string; dependency?: string } = {}): Promise<boolean> => {
+        if (!userId || !isCurrent()) return false;
+        const fingerprint = `${userId}:${options.restoreId ? `restore:${options.restoreId}` : JSON.stringify(input)}`;
+        setBusy(old => ({ owner: userId, count: (old.owner === userId ? old.count : 0) + 1 }));
         try {
-            localWords = JSON.parse(localData) as Word[];
-        } catch (e) {
-            console.error('Migration parse failed:', e);
-            return false;
-        }
-        if (!Array.isArray(localWords) || localWords.length === 0) return true;
-
-        // 去重：筛掉服务器已存在（大小写不敏感 word+language）以及本地内部重复的词
-        const toMigrate = selectWordsToMigrate(localWords, serverWords);
-        if (toMigrate.length === 0) {
-            // 全部已在云端，安全清空本地
-            localStorage.removeItem('vocab-words-v4');
-            return true;
-        }
-
-        setSyncing(true);
-        showToast?.('info', `正在迁移 ${toMigrate.length} 个本地词汇...`);
-
-        let allSucceeded = true;
-        let migratedCount = 0;
-
-        for (const w of toMigrate) {
-            const { error } = await supabase.from('words').insert({
-                user_id: uid,
-                word: w.word,
-                meaning: w.meaning,
-                language: w.language,
-                example: w.example,
-                example_cn: w.exampleCn,
-                category: (w.category || '') as Word['category'],
-                date: w.date
-            });
-
-            if (error) {
-                console.error('Migration insert failed:', w.word, error);
-                allSucceeded = false;
-                // 继续尝试其余词，但保留 localStorage
-            } else {
-                migratedCount++;
-            }
-        }
-
-        // Reload after migration（合并 pending_add，避免覆盖离线新增词）
-        const { data } = await supabase
-            .from('words')
-            .select('*')
-            .eq('user_id', uid)
-            .order('created_at', { ascending: false });
-
-        if (data) {
-            const formatted = data.map(formatWordRow);
-            const pendingAdds = await getPendingAddWords();
-            setWords(mergePendingAdds(formatted, pendingAdds));
-            await setCachedWords(formatted);
-        }
-
-        if (allSucceeded) {
-            localStorage.removeItem('vocab-words-v4');
-            if (migratedCount > 0) {
-                showToast?.('success', `已迁移 ${migratedCount} 个词汇到云端`);
-            }
-        } else {
-            // 保留 localStorage 供下次重试，不弹成功提示
-            console.error('Migration incomplete; localStorage retained for retry');
-            showToast?.('error', '部分词汇迁移失败，已保留本地数据稍后重试');
-        }
-
-        setSyncing(false);
-        return allSucceeded;
-    };
-
-    const addWord = useCallback(async (newWord: Omit<Word, 'id' | 'timestamp'>, options?: { silent?: boolean }) => {
-        if (!userId) return;
-        setSyncing(true);
-
-        // Generate a temporary ID for offline use
-        const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
-        const timestamp = Date.now();
-        const wordWithId: Word = {
-            ...newWord,
-            id: tempId,
-            timestamp
-        };
-
-        if (isOnline) {
-            // Online: add directly to Supabase
-            const { data, error } = await supabase.from('words').insert({
-                user_id: userId,
-                word: newWord.word,
-                meaning: newWord.meaning,
-                language: newWord.language,
-                example: newWord.example,
-                example_cn: newWord.exampleCn,
-                category: newWord.category,
-                etymology: newWord.etymology,
-                date: newWord.date
-            }).select().single();
-
-            if (error) {
-                console.error('Add error:', error);
-                showToast?.('error', '添加失败');
-            } else {
-                const serverWord: Word = {
-                    id: data.id,
-                    word: data.word,
-                    meaning: data.meaning,
-                    language: data.language,
-                    example: data.example || '',
-                    exampleCn: data.example_cn || '',
-                    category: data.category || '',
-                    etymology: data.etymology || '',
-                    date: data.date,
-                    timestamp: new Date(data.created_at).getTime()
-                };
-                setWords(prev => [serverWord, ...prev]);
-                // Update cache
-                const allWords = await getAllCachedWords();
-                await setCachedWords([serverWord, ...allWords]);
-                if (!options?.silent) {
-                    showToast?.('success', '已添加');
+            const operations = (await getMaterialOperations(userId)).filter(op => op.kind === 'word');
+            const same = (word: Word) => word.word.trim().toLowerCase() === input.word.trim().toLowerCase() && word.language === input.language;
+            const deletion = operations.filter(op => op.action === 'delete' && same(op.record as Word)).slice(-1)[0];
+            const queued = operations.find(op => op.action === 'add' && same(op.record as Word)
+                && (!deletion || (op.sequence || 0) > (deletion.sequence || 0)) && (!options.restoreId || op.restore_of === options.restoreId));
+            const id = queued?.id || (!deletion ? intents.current.get(fingerprint) : undefined) || crypto.randomUUID();
+            intents.current.set(fingerprint, id);
+            let word: Word = { ...input, id, timestamp: Date.now() };
+            if (queued) {
+                if (JSON.stringify(wordBody(word)) !== JSON.stringify(queued.body)) { if (isCurrent()) showToast?.('error', '此词已有不同的待同步版本，请先处理或丢弃该版本；当前草稿已保留。'); return false; }
+                word = queued.record as Word;
+            } else if (!options.restoreId) {
+                const additions = new Set(operations.filter(op => op.action === 'add').map(op => op.record_id));
+                if ((await readMaterials<Word>(userId, 'word')).some(existing => !additions.has(existing.id) && same(existing))) {
+                    if (isCurrent() && !options.silent) showToast?.('info', '该词已在生词本中'); return isCurrent();
                 }
             }
-        } else {
-            // Offline: add to local cache and queue for sync
-            setWords(prev => [wordWithId, ...prev]);
-            await addPendingWord(wordWithId);
-            onPendingChange?.();
-            if (!options?.silent) {
-                showToast?.('info', '已离线保存，稍后同步');
-            }
-        }
-
-        setSyncing(false);
-    }, [userId, isOnline, showToast, onPendingChange]);
-
-    // Batched version of addWord for adding multiple words at once with a single state update
-    const addWords = useCallback(async (newWords: Omit<Word, 'id' | 'timestamp'>[]) => {
-        if (!userId || newWords.length === 0) return;
-        setSyncing(true);
-
-        const addedWords: Word[] = [];
-
-        if (isOnline) {
-            // Online: batch insert to Supabase
-            const insertData = newWords.map(w => ({
-                user_id: userId,
-                word: w.word,
-                meaning: w.meaning,
-                language: w.language,
-                example: w.example,
-                example_cn: w.exampleCn,
-                category: w.category,
-                etymology: w.etymology,
-                date: w.date
-            }));
-
-            const { data, error } = await supabase
-                .from('words')
-                .insert(insertData)
-                .select();
-
-            if (error) {
-                console.error('Batch add error:', error);
-                showToast?.('error', '批量添加失败');
-            } else if (data) {
-                for (const d of data) {
-                    addedWords.push({
-                        id: d.id,
-                        word: d.word,
-                        meaning: d.meaning,
-                        language: d.language,
-                        example: d.example || '',
-                        exampleCn: d.example_cn || '',
-                        category: d.category || '',
-                        etymology: d.etymology || '',
-                        date: d.date,
-                        timestamp: new Date(d.created_at).getTime()
-                    });
-                }
-            }
-        } else {
-            // Offline: batch add to local cache
-            for (const w of newWords) {
-                const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
-                const wordWithId: Word = {
-                    ...w,
-                    id: tempId,
-                    timestamp: Date.now()
-                };
-                addedWords.push(wordWithId);
-                await addPendingWord(wordWithId);
-            }
-            onPendingChange?.();
-        }
-
-        // Single state update with all new words
-        if (addedWords.length > 0) {
-            setWords(prev => [...addedWords, ...prev]);
-            // Update cache with all new words
-            const allCachedWords = await getAllCachedWords();
-            await setCachedWords([...addedWords, ...allCachedWords]);
-        }
-
-        setSyncing(false);
-    }, [userId, isOnline, showToast, onPendingChange]);
-
+            if (!isCurrent()) return false;
+            const dependency = options.dependency || deletion?.id;
+            if (dependency || options.restoreId) {
+                await enqueueMaterial({ id, user_id: userId, kind: 'word', action: 'add', record_id: id, record: word, body: wordBody(word), depends_on: dependency, restore_of: options.restoreId });
+            } else await addPendingWord(word, userId);
+            if (!isCurrent()) return false;
+            await loadLocal(); onPendingChange?.();
+            if (!isOnline) { if (!options.silent) showToast?.('info', '已保存到本机，联网后同步'); intents.current.delete(fingerprint); return true; }
+            await retryMaterialOperation(userId, id);
+            const result = await syncMaterialOperations(userId); if (!isCurrent()) return false;
+            await loadLocal(); onPendingChange?.();
+            if (!await materialConfirmed(userId, id)) { showToast?.('error', result.errors[0] || '尚未确认保存，已保留草稿和待同步请求，可重试。'); return false; }
+            intents.current.delete(fingerprint); if (!options.silent) showToast?.('success', options.restoreId ? '已恢复' : '已保存'); return true;
+        } catch { if (isCurrent()) showToast?.('error', '保存未完成，草稿已保留，请重试或检查本机存储。'); return false; }
+        finally { if (isCurrent()) setBusy(old => ({ owner: userId, count: Math.max(0, old.count - 1) })); }
+    }, [userId, isCurrent, isOnline, loadLocal, showToast, onPendingChange]);
+    const addWord = useCallback((word: NewWord, options?: { silent?: boolean }) => save(word, options), [save]);
+    const addWords = useCallback(async (items: NewWord[]): Promise<boolean> => {
+        if (!userId || !isCurrent() || !items.length) return false;
+        let complete = true;
+        // 每项都先持久化；部分成功后重试仍通过规范词去重和稳定请求 ID 保留已确认结果。
+        for (const item of items) { if (!isCurrent()) return false; if (!await save(item, { silent: true })) complete = false; }
+        return complete;
+    }, [userId, isCurrent, save]);
     const deleteWord = useCallback(async (id: string): Promise<Word | null> => {
-        if (!userId) return null;
-
-        const wordToDelete = words.find(w => w.id === id);
-        if (!wordToDelete) return null;
-
-        // Optimistic update
-        setWords(prev => prev.filter(w => w.id !== id));
-
-        if (id.startsWith('temp_')) {
-            // 该词仍是离线新增、尚未同步（temp id），服务器上并无对应行。
-            // 走离线取消路径：删除本地记录并撤销待同步的新增操作；不向服务器发起删除，
-            // 否则 delete().eq('id', temp_id) 会匹配 0 行被误判为成功，随后同步又插入真实行导致「删除的词复活」。
-            await markWordDeleted(id);
-            onPendingChange?.();
-        } else if (isOnline) {
-            // Online: delete from Supabase
-            const { error } = await supabase.from('words').delete().eq('id', id);
-            if (error) {
-                // Restore on error
-                setWords(prev => [...prev, wordToDelete].sort((a, b) => b.timestamp - a.timestamp));
-                showToast?.('error', '删除失败');
-                return null;
-            }
-
-            // Update cache
-            const allWords = await getAllCachedWords();
-            await setCachedWords(allWords.filter(w => w.id !== id));
-        } else {
-            // Offline: mark for deletion in cache
-            await markWordDeleted(id);
-            onPendingChange?.();
-        }
-
-        // Clean up audio cache for the deleted word
-        const cacheKey = generateCacheKey(wordToDelete.language, wordToDelete.word);
-        deleteCachedAudio(cacheKey).catch(() => { }); // Fire and forget
-
-        return wordToDelete;
-    }, [userId, words, isOnline, showToast, onPendingChange]);
-
-    const updateWordExample = useCallback(async (id: string, example: string, exampleCn: string) => {
-        if (isOnline) {
-            const { error } = await supabase
-                .from('words')
-                .update({ example, example_cn: exampleCn })
-                .eq('id', id);
-
-            if (!error) {
-                setWords(prev => prev.map(w => w.id === id ? { ...w, example, exampleCn } : w));
-                // Update cache
-                await updateCachedWord(id, { example, exampleCn });
-            } else {
-                showToast?.('error', '更新例句失败');
-            }
-        } else {
-            // Offline: just update locally
-            setWords(prev => prev.map(w => w.id === id ? { ...w, example, exampleCn } : w));
-            await updateCachedWord(id, { example, exampleCn });
-        }
-    }, [isOnline, showToast]);
-
-    const restoreWord = useCallback(async (word: Word) => {
-        if (!userId) return;
-
-        if (isOnline) {
-            const { data, error } = await supabase.from('words').insert({
-                user_id: userId,
-                word: word.word,
-                meaning: word.meaning,
-                language: word.language,
-                example: word.example,
-                example_cn: word.exampleCn,
-                category: word.category,
-                etymology: word.etymology,
-                date: word.date
-            }).select().single();
-
-            if (!error && data) {
-                const restoredWord: Word = {
-                    id: data.id,
-                    word: data.word,
-                    meaning: data.meaning,
-                    language: data.language,
-                    example: data.example || '',
-                    exampleCn: data.example_cn || '',
-                    category: data.category || '',
-                    etymology: data.etymology || '',
-                    date: data.date,
-                    timestamp: new Date(data.created_at).getTime()
-                };
-                setWords(prev => [restoredWord, ...prev]);
-                const allWords = await getAllCachedWords();
-                await setCachedWords([restoredWord, ...allWords]);
-                showToast?.('success', '已恢复');
-            }
-        } else {
-            // Offline restore
-            const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
-            const restoredWord: Word = { ...word, id: tempId, timestamp: Date.now() };
-            setWords(prev => [restoredWord, ...prev]);
-            await addPendingWord(restoredWord);
-            onPendingChange?.();
-            showToast?.('info', '已离线恢复，稍后同步');
-        }
-    }, [userId, isOnline, showToast, onPendingChange]);
-
-    const getFilteredWords = useCallback((activeTab: string, searchQuery: string, todayFilter: boolean) => {
-        return words.filter(w => {
-            const matchesTab = activeTab === 'all' || activeTab === 'saved' || w.language === activeTab;
-            const matchesSearch = !searchQuery || w.word.toLowerCase().includes(searchQuery.toLowerCase()) || w.meaning.includes(searchQuery);
-            const matchesToday = !todayFilter || w.date === new Date().toLocaleDateString('sv-SE');
-            return matchesTab && matchesSearch && matchesToday;
-        });
-    }, [words]);
-
-    const getGroupedByDate = useCallback((filteredWords: Word[]) => {
-        return filteredWords.reduce((acc, word) => {
-            if (!acc[word.date]) acc[word.date] = [];
-            acc[word.date].push(word);
-            return acc;
-        }, {} as Record<string, Word[]>);
-    }, []);
-
-    const stats = useMemo(() => ({
-        total: words.length,
-        en: words.filter(w => w.language === 'en').length,
-        de: words.filter(w => w.language === 'de').length,
-        today: words.filter(w => w.date === new Date().toLocaleDateString('sv-SE')).length
-    }), [words]);
-
-    return {
-        words,
-        loading,
-        syncing,
-        addWord,
-        addWords,
-        deleteWord,
-        updateWordExample,
-        restoreWord,
-        getFilteredWords,
-        getGroupedByDate,
-        stats,
-        refreshFromServer
-    };
+        if (!userId || !isCurrent()) return null;
+        const word = valuesRef.current.find(item => item.id === id); if (!word) return null;
+        try {
+            await markWordDeleted(id, userId); if (!isCurrent()) return null;
+            for (const fingerprint of intents.current.keys()) if (fingerprint.startsWith(`${userId}:`)) intents.current.delete(fingerprint);
+            await loadLocal(); pendingNotice();
+            if (isOnline) { const result = await syncMaterialOperations(userId); if (!isCurrent()) return null; await loadLocal(); pendingNotice(); if (result.failed) showToast?.('info', '删除已在本机保存，云端确认前可撤销。'); }
+            void deleteCachedAudio(generateCacheKey(word.language, word.word)).catch(() => {});
+            return word;
+        } catch { if (isCurrent()) showToast?.('error', '无法保存删除操作，词汇仍保留。'); return null; }
+    }, [userId, isCurrent, loadLocal, isOnline, onPendingChange, showToast]);
+    const restoreWord = useCallback(async (word: Word): Promise<boolean> => {
+        if (!userId || !isCurrent()) return false;
+        try {
+            if (await cancelUnsentMaterial(userId, 'word', word.id, 'delete')) { await loadLocal(); pendingNotice(); return true; }
+            const deletion = (await getMaterialOperations(userId)).find(op => op.kind === 'word' && op.record_id === word.id && op.action === 'delete');
+            const { id: _, timestamp: __, ...input } = word;
+            return save(input, { restoreId: word.id, dependency: deletion?.id });
+        } catch { if (isCurrent()) showToast?.('error', '恢复未完成，请重试。'); return false; }
+    }, [userId, isCurrent, loadLocal, onPendingChange, save, showToast]);
+    const updateWordExample = useCallback(async (id: string, example: string, exampleCn: string): Promise<boolean> => {
+        if (!userId || !isCurrent()) return false;
+        const word = valuesRef.current.find(item => item.id === id); if (!word) return false;
+        const fingerprint = `${userId}:example:${id}:${example}:${exampleCn}`;
+        const requestId = intents.current.get(fingerprint) || crypto.randomUUID(); intents.current.set(fingerprint, requestId);
+        try {
+            const addition = (await getMaterialOperations(userId)).find(op => op.kind === 'word' && op.record_id === id && op.action === 'add');
+            await enqueueMaterial({ id: requestId, user_id: userId, kind: 'word', action: 'update', record_id: id, record: { ...word, example, exampleCn }, body: { example, example_cn: exampleCn }, depends_on: addition?.id });
+            if (!isCurrent()) return false;
+            await loadLocal(); pendingNotice();
+            if (isOnline) { await retryMaterialOperation(userId, requestId); await syncMaterialOperations(userId); if (!isCurrent()) return false; await loadLocal(); pendingNotice(); if (!await materialConfirmed(userId, requestId)) { showToast?.('error', '例句尚未同步，已保留更新供重试。'); return false; } }
+            intents.current.delete(fingerprint); return true;
+        } catch { if (isCurrent()) showToast?.('error', '更新例句失败，请重试。'); return false; }
+    }, [userId, isCurrent, isOnline, loadLocal, onPendingChange, showToast]);
+    const getFilteredWords = useCallback((activeTab: string, searchQuery: string, todayFilter: boolean) => words.filter(word =>
+        (activeTab === 'all' || activeTab === 'saved' || word.language === activeTab)
+        && (!searchQuery || word.word.toLowerCase().includes(searchQuery.toLowerCase()) || word.meaning.includes(searchQuery))
+        && (!todayFilter || word.date === new Date().toLocaleDateString('sv-SE'))), [words]);
+    const getGroupedByDate = useCallback((items: Word[]) => items.reduce<Record<string, Word[]>>((groups, word) => { (groups[word.date] ||= []).push(word); return groups; }, {}), []);
+    const stats = useMemo(() => ({ total: words.length, en: words.filter(word => word.language === 'en').length, de: words.filter(word => word.language === 'de').length, today: words.filter(word => word.date === new Date().toLocaleDateString('sv-SE')).length }), [words]);
+    return { words, pendingWordIds, loading, syncing: busy.owner === userId && busy.count > 0, addWord, addWords, deleteWord, updateWordExample, restoreWord, getFilteredWords, getGroupedByDate, stats, refreshFromServer };
 }
-
 export default useWords;

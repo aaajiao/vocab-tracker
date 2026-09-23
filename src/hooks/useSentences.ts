@@ -1,240 +1,73 @@
-import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '../supabaseClient';
+import { useState, useCallback, useRef } from 'react';
 import type { SavedSentence, SentenceInput } from '../types';
 import { deleteCachedAudio, generateCacheKey } from '../services/audioCache';
-import {
-    getAllCachedSentences,
-    setCachedSentences,
-    addPendingSentence,
-    markSentenceDeleted,
-    withSentenceDefaults
-} from '../services/sentencesCache';
-
-interface UseSentencesProps {
-    userId: string | undefined;
-    isOnline?: boolean;
-    showToast?: (type: 'success' | 'error' | 'info', message: string) => void;
-    onPendingChange?: () => void;
-}
-
-interface UseSentencesReturn {
-    savedSentences: SavedSentence[];
-    savingId: string | null;
-    saveSentence: (sentenceObj: SentenceInput, successMessage?: string) => Promise<boolean>;
-    unsaveSentence: (id: string) => Promise<SavedSentence | null>;
-    restoreSentence: (sentence: SavedSentence) => Promise<void>;
-    isSentenceSaved: (sentence: string) => boolean;
-    getSavedSentenceId: (sentence: string) => string | null;
-    refreshFromServer: () => Promise<void>;
-}
-
-export function useSentences({ userId, isOnline = true, showToast, onPendingChange }: UseSentencesProps): UseSentencesReturn {
-    const [savedSentences, setSavedSentences] = useState<SavedSentence[]>([]);
-    const [savingId, setSavingId] = useState<string | null>(null);
-
-    // Load saved sentences - first from cache, then from server if online
-    useEffect(() => {
-        if (!userId) return;
-
-        const loadSentences = async () => {
-            // Step 1: Load from cache first
-            const cachedSentences = await getAllCachedSentences();
-            if (cachedSentences.length > 0) {
-                setSavedSentences(cachedSentences);
+import { addPendingSentence, markSentenceDeleted, sentenceBody, withSentenceDefaults } from '../services/sentencesCache';
+import { cancelUnsentMaterial, enqueueMaterial, getMaterialOperations, materialConfirmed, readMaterials } from '../services/materialStore';
+import { retryMaterialOperation, syncMaterialOperations, sentenceFromApi } from '../services/materialQueue';
+import { useMaterialCollection } from './useMaterialCollection';
+interface Props { userId: string | undefined; isOnline?: boolean; showToast?: (type: 'success' | 'error' | 'info', message: string) => void; onPendingChange?: () => void }
+export function useSentences({ userId, isOnline = true, showToast, onPendingChange }: Props) {
+    const { values: savedSentences, valuesRef, isCurrent, loadLocal, refreshFromServer } = useMaterialCollection<SavedSentence>({ userId, isOnline, kind: 'sentence', decode: sentenceFromApi, onError: message => showToast?.('error', message) });
+    const [saving, setSaving] = useState<{ owner?: string; id: string | null }>({ owner: userId, id: null });
+    const intents = useRef(new Map<string, SavedSentence>());
+    const save = useCallback(async (input: SentenceInput, message = '已收藏', restored?: SavedSentence): Promise<boolean> => {
+        if (!userId || !isCurrent()) return false;
+        const fingerprint = `${userId}:${restored ? `restore:${restored.id}` : JSON.stringify(input)}`;
+        setSaving({ owner: userId, id: input.sentence });
+        try {
+            const operations = (await getMaterialOperations(userId)).filter(op => op.kind === 'sentence');
+            const deletion = operations.filter(op => op.action === 'delete' && (restored ? op.record_id === restored.id
+                : (op.record as SavedSentence).sentence === input.sentence && op.record.language === input.language)).slice(-1)[0];
+            const queued = operations.find(op => op.action === 'add' && (op.record as SavedSentence).sentence === input.sentence && op.record.language === input.language
+                && (!deletion || (op.sequence || 0) > (deletion.sequence || 0)) && (!restored || op.restore_of === restored.id));
+            let sentence = queued?.record as SavedSentence | undefined || (!deletion ? intents.current.get(fingerprint) : undefined);
+            if (!sentence) sentence = withSentenceDefaults({ id: crypto.randomUUID(), sentence: input.sentence, sentence_cn: input.sentenceCn,
+                language: input.language, scene: input.scene, source_type: input.sourceType, source_words: input.sourceWords,
+                keywords: input.keywords, grammar: input.grammar, created_at: restored?.created_at || new Date().toISOString() });
+            intents.current.set(fingerprint, sentence);
+            const requested = withSentenceDefaults({ ...sentence, sentence: input.sentence, sentence_cn: input.sentenceCn, language: input.language,
+                scene: input.scene, source_type: input.sourceType, source_words: input.sourceWords, keywords: input.keywords, grammar: input.grammar });
+            if (queued && JSON.stringify(sentenceBody(requested)) !== JSON.stringify(queued.body)) { if (isCurrent()) showToast?.('error', '这句话已有不同的待同步版本，请先处理或丢弃该版本；当前草稿已保留。'); return false; }
+            if (!queued && !restored && (await readMaterials<SavedSentence>(userId, 'sentence')).some(existing => existing.sentence === input.sentence && existing.language === input.language)) {
+                if (isCurrent()) showToast?.('info', '这句话已经收藏'); return isCurrent();
             }
-
-            // Step 2: If online, fetch from server
-            if (isOnline) {
-                const { data, error } = await supabase
-                    .from('saved_sentences')
-                    .select('*')
-                    .eq('user_id', userId)
-                    .order('created_at', { ascending: false });
-
-                if (!error && data) {
-                    // 老数据可能缺 keywords/grammar 列，读回统一兜底为空数组
-                    const normalized = (data as SavedSentence[]).map(withSentenceDefaults);
-                    setSavedSentences(normalized);
-                    await setCachedSentences(normalized);
-                }
-            }
-        };
-
-        loadSentences();
-    }, [userId, isOnline]);
-
-    // Refresh from server
-    const refreshFromServer = useCallback(async () => {
-        if (!userId || !isOnline) return;
-
-        const { data, error } = await supabase
-            .from('saved_sentences')
-            .select('*')
-            .eq('user_id', userId)
-            .order('created_at', { ascending: false });
-
-        if (!error && data) {
-            const normalized = (data as SavedSentence[]).map(withSentenceDefaults);
-            setSavedSentences(normalized);
-            await setCachedSentences(normalized);
-        }
-    }, [userId, isOnline]);
-
-    // 返回 true 表示保存成功（在线插入成功 / 离线已入队），false 表示在线插入失败。
-    // 调用方据此决定是否关闭表单、清空草稿——失败时保留草稿供用户重试，不丢用户输入。
-    const saveSentence = useCallback(async (sentenceObj: SentenceInput, successMessage: string = '已收藏'): Promise<boolean> => {
-        if (!userId) return false;
-        setSavingId(sentenceObj.sentence);
-
-        // Generate temp ID for offline use
-        const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
-        const now = new Date().toISOString();
-        let success = false;
-
-        if (isOnline) {
-            const { data, error } = await supabase.from('saved_sentences').insert({
-                user_id: userId,
-                sentence: sentenceObj.sentence,
-                sentence_cn: sentenceObj.sentenceCn,
-                language: sentenceObj.language,
-                scene: sentenceObj.scene || null,
-                source_type: sentenceObj.sourceType,
-                source_words: sentenceObj.sourceWords || [],
-                keywords: sentenceObj.keywords || [],
-                grammar: sentenceObj.grammar || []
-            }).select();
-
-            if (!error && data) {
-                const saved = withSentenceDefaults(data[0] as SavedSentence);
-                setSavedSentences(prev => [saved, ...prev]);
-                const allSentences = await getAllCachedSentences();
-                await setCachedSentences([saved, ...allSentences]);
-                showToast?.('success', successMessage);
-                success = true;
-            } else {
-                showToast?.('error', '收藏失败');
-            }
-        } else {
-            // Offline: save locally
-            const offlineSentence: SavedSentence = {
-                id: tempId,
-                sentence: sentenceObj.sentence,
-                sentence_cn: sentenceObj.sentenceCn,
-                language: sentenceObj.language,
-                scene: sentenceObj.scene || null,
-                source_type: sentenceObj.sourceType,
-                source_words: sentenceObj.sourceWords || [],
-                keywords: sentenceObj.keywords || [],
-                grammar: sentenceObj.grammar || [],
-                created_at: now
-            };
-            setSavedSentences(prev => [offlineSentence, ...prev]);
-            await addPendingSentence(offlineSentence);
-            onPendingChange?.();
-            showToast?.('info', '已离线收藏，稍后同步');
-            success = true;
-        }
-
-        setSavingId(null);
-        return success;
-    }, [userId, isOnline, showToast, onPendingChange]);
-
+            if (!isCurrent()) return false;
+            if (deletion || restored) await enqueueMaterial({ id: sentence.id, user_id: userId, kind: 'sentence', action: 'add', record_id: sentence.id, record: sentence, body: sentenceBody(sentence), depends_on: deletion?.id, restore_of: restored?.id });
+            else await addPendingSentence(sentence, userId);
+            if (!isCurrent()) return false;
+            await loadLocal(); onPendingChange?.();
+            if (!isOnline) { showToast?.('info', '已保存到本机，联网后同步'); intents.current.delete(fingerprint); return true; }
+            await retryMaterialOperation(userId, sentence.id);
+            const result = await syncMaterialOperations(userId); if (!isCurrent()) return false;
+            await loadLocal(); onPendingChange?.();
+            if (!await materialConfirmed(userId, sentence.id)) { showToast?.('error', result.errors[0] || '尚未确认保存，草稿和原请求已保留，可重试。'); return false; }
+            intents.current.delete(fingerprint); showToast?.('success', message); return true;
+        } catch { if (isCurrent()) showToast?.('error', '保存未完成，草稿已保留，请重试或检查本机存储。'); return false; }
+        finally { if (isCurrent()) setSaving({ owner: userId, id: null }); }
+    }, [userId, isCurrent, isOnline, loadLocal, showToast, onPendingChange]);
+    const saveSentence = useCallback((input: SentenceInput, message?: string) => save(input, message), [save]);
     const unsaveSentence = useCallback(async (id: string): Promise<SavedSentence | null> => {
-        // Find the sentence before deleting
-        const sentenceToDelete = savedSentences.find(s => s.id === id);
-        if (!sentenceToDelete) return null;
-
-        // Optimistic update
-        setSavedSentences(prev => prev.filter(s => s.id !== id));
-
-        if (id.startsWith('temp_')) {
-            // 该句子仍是离线新增、尚未同步（temp id），服务器上并无对应行。
-            // 走离线取消路径：删除本地记录并撤销待同步的新增操作；不向服务器发 delete，
-            // 否则 delete().eq('id', temp_id) 匹配 0 行被误判为成功，随后同步又插回真实行导致「删除的句子复活」。
-            await markSentenceDeleted(id);
-            onPendingChange?.();
-        } else if (isOnline) {
-            const { error } = await supabase.from('saved_sentences').delete().eq('id', id);
-            if (error) {
-                // Restore on error
-                setSavedSentences(prev => [sentenceToDelete, ...prev]);
-                showToast?.('error', '取消收藏失败');
-                return null;
-            }
-
-            // Update cache
-            const allSentences = await getAllCachedSentences();
-            await setCachedSentences(allSentences.filter(s => s.id !== id));
-        } else {
-            // Offline: mark for deletion
-            await markSentenceDeleted(id);
-            onPendingChange?.();
-        }
-
-        // Clean up audio cache for the deleted sentence
-        const cacheKey = generateCacheKey(sentenceToDelete.language, sentenceToDelete.sentence);
-        deleteCachedAudio(cacheKey).catch(() => { }); // Fire and forget
-
-        return sentenceToDelete;
-    }, [savedSentences, isOnline, showToast, onPendingChange]);
-
-    const restoreSentence = useCallback(async (sentence: SavedSentence) => {
-        if (!userId) return;
-
-        if (isOnline) {
-            const { data, error } = await supabase.from('saved_sentences').insert({
-                user_id: userId,
-                sentence: sentence.sentence,
-                sentence_cn: sentence.sentence_cn,
-                language: sentence.language,
-                scene: sentence.scene,
-                source_type: sentence.source_type,
-                source_words: sentence.source_words || [],
-                keywords: sentence.keywords || [],
-                grammar: sentence.grammar || []
-            }).select();
-
-            if (!error && data) {
-                const restored = withSentenceDefaults(data[0] as SavedSentence);
-                setSavedSentences(prev => [restored, ...prev]);
-                const allSentences = await getAllCachedSentences();
-                await setCachedSentences([restored, ...allSentences]);
-                showToast?.('success', '已恢复');
-            }
-        } else {
-            // Offline restore
-            const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
-            const restoredSentence: SavedSentence = {
-                ...sentence,
-                id: tempId,
-                created_at: new Date().toISOString()
-            };
-            setSavedSentences(prev => [restoredSentence, ...prev]);
-            await addPendingSentence(restoredSentence);
-            onPendingChange?.();
-            showToast?.('info', '已离线恢复，稍后同步');
-        }
-    }, [userId, isOnline, showToast, onPendingChange]);
-
-    const isSentenceSaved = useCallback((sentence: string) => {
-        return savedSentences.some(s => s.sentence === sentence);
-    }, [savedSentences]);
-
-    const getSavedSentenceId = useCallback((sentence: string): string | null => {
-        const found = savedSentences.find(s => s.sentence === sentence);
-        return found ? found.id : null;
-    }, [savedSentences]);
-
-    return {
-        savedSentences,
-        savingId,
-        saveSentence,
-        unsaveSentence,
-        restoreSentence,
-        isSentenceSaved,
-        getSavedSentenceId,
-        refreshFromServer
-    };
+        if (!userId || !isCurrent()) return null;
+        const sentence = valuesRef.current.find(item => item.id === id); if (!sentence) return null;
+        try {
+            await markSentenceDeleted(id, userId); if (!isCurrent()) return null;
+            for (const fingerprint of intents.current.keys()) if (fingerprint.startsWith(`${userId}:`)) intents.current.delete(fingerprint);
+            await loadLocal(); onPendingChange?.();
+            if (isOnline) { const result = await syncMaterialOperations(userId); if (!isCurrent()) return null; await loadLocal(); onPendingChange?.(); if (result.failed) showToast?.('info', '删除已在本机保存，云端确认前可撤销。'); }
+            void deleteCachedAudio(generateCacheKey(sentence.language, sentence.sentence)).catch(() => {});
+            return sentence;
+        } catch { if (isCurrent()) showToast?.('error', '无法保存删除操作，句子仍保留。'); return null; }
+    }, [userId, isCurrent, isOnline, loadLocal, onPendingChange, showToast]);
+    const restoreSentence = useCallback(async (sentence: SavedSentence): Promise<boolean> => {
+        if (!userId || !isCurrent()) return false;
+        try {
+            if (await cancelUnsentMaterial(userId, 'sentence', sentence.id, 'delete')) { await loadLocal(); onPendingChange?.(); return true; }
+            return save({ sentence: sentence.sentence, sentenceCn: sentence.sentence_cn, language: sentence.language, scene: sentence.scene,
+                sourceType: sentence.source_type, sourceWords: sentence.source_words, keywords: sentence.keywords, grammar: sentence.grammar }, '已恢复', sentence);
+        } catch { if (isCurrent()) showToast?.('error', '恢复未完成，请重试。'); return false; }
+    }, [userId, isCurrent, loadLocal, onPendingChange, save, showToast]);
+    const isSentenceSaved = useCallback((sentence: string) => savedSentences.some(item => item.sentence === sentence), [savedSentences]);
+    const getSavedSentenceId = useCallback((sentence: string) => savedSentences.find(item => item.sentence === sentence)?.id || null, [savedSentences]);
+    return { savedSentences, savingId: saving.owner === userId ? saving.id : null, saveSentence, unsaveSentence, restoreSentence, isSentenceSaved, getSavedSentenceId, refreshFromServer };
 }
-
 export default useSentences;

@@ -1,274 +1,97 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Word } from '../types';
-import type { ReviewState } from './srs';
+import type { Word, SavedSentence } from '../types';
+const api = vi.hoisted(() => vi.fn());
+vi.mock('./learningApi', async original => ({ ...await original<typeof import('./learningApi')>(), learningRequest: api }));
+vi.mock('../supabaseClient', () => ({ supabase: {} }));
+import { LearningApiError } from './learningApi';
+import { syncPendingOperations, getPendingCount } from './syncQueue';
+import { addPendingWord, getAllCachedWords, setCachedWords, markWordDeleted } from './wordsCache';
+import { addPendingSentence } from './sentencesCache';
+import { getMaterialOperations, readLegacyMaterialData, discardLegacyMaterialData } from './materialStore';
+import { getMaterialSyncStatus, exportMaterialRecovery } from './materialQueue';
+import { enqueueReviewEvent, getReviewEvents } from './reviewEventQueue';
+import { upsert as saveReviewState, get as getReviewState } from './reviewCache';
+const word = (): Word => ({ id: crypto.randomUUID(), word: 'Haus', meaning: '房子', language: 'de', example: '', exampleCn: '', category: '', date: '2026-09-23', timestamp: Date.now() });
+const sentence = (): SavedSentence => ({ id: crypto.randomUUID(), sentence: 'Ich lerne.', sentence_cn: '我在学习。', language: 'de', scene: null, source_type: 'input', source_words: [], keywords: [{ word: 'lernen', meaning: '学习' }], grammar: [{ point: '动词', explanation: '位置' }], created_at: '2026-09-23T10:00:00Z' });
+function accepted(body: Record<string, unknown>) { return { data: { ...body, created_at: body.created_at || new Date().toISOString() } }; }
+beforeEach(() => { api.mockReset(); });
 
-// Mock the supabase client BEFORE importing anything that pulls it in.
-// syncQueue.ts → import { supabase } from '../supabaseClient'
-const fromMock = vi.fn();
-const eventRequest = vi.hoisted(() => vi.fn());
-vi.mock('./learningApi', async (original) => ({ ...await original<typeof import('./learningApi')>(), learningRequest: eventRequest }));
-vi.mock('../supabaseClient', () => ({
-    supabase: {
-        from: (...args: unknown[]) => fromMock(...args),
-    },
-}));
-
-// Now import the module under test and the cache helpers.
-const { syncPendingOperations, getPendingCount, MAX_SYNC_RETRIES } = await import('./syncQueue');
-const {
-    addPendingWord,
-    getAllCachedWords,
-    getPendingOperations,
-    incrementOperationRetry,
-    clearWordsCache,
-} = await import('./wordsCache');
-const { clearSentencesCache } = await import('./sentencesCache');
-const { enqueueReviewEvent, getReviewEvents, clearReviewEventQueue } = await import('./reviewEventQueue');
-const {
-    upsert: upsertReviewState,
-    getPending: getPendingReviewStates,
-    get: getReviewState,
-    clear: clearReviewCache,
-} = await import('./reviewCache');
-
-function makeReviewState(wordId: string): ReviewState {
-    return {
-        wordId,
-        due: '2026-07-08',
-        intervalDays: 3,
-        ease: 2.5,
-        reps: 1,
-        lapses: 0,
-        lastReviewedAt: '2026-07-07T10:00:00.000Z',
-        updatedAt: '2026-07-07T10:00:00.000Z',
-    };
-}
-
-function makeWord(overrides: Partial<Word> = {}): Word {
-    return {
-        id: 'temp_1715587200000_abc',
-        word: 'apple',
-        meaning: '苹果',
-        language: 'en',
-        example: 'I ate an apple.',
-        exampleCn: '我吃了一个苹果。',
-        category: 'daily',
-        date: '2026-05-13',
-        timestamp: 1715587200000,
-        ...overrides,
-    };
-}
-
-// Build a thenable chain that mimics supabase.from('x').insert(...).select().single()
-// → resolves to { data, error }.
-function mockInsertResolves(data: unknown, error: unknown = null) {
-    fromMock.mockReturnValueOnce({
-        insert: vi.fn().mockReturnValue({
-            select: vi.fn().mockReturnValue({
-                single: vi.fn().mockResolvedValue({ data, error }),
-            }),
-        }),
-        delete: vi.fn().mockReturnValue({
-            eq: vi.fn().mockResolvedValue({ error: null }),
-        }),
+describe('稳定账号归属、FIFO与幂等材料同步', () => {
+    it('A的词句队列不能被B同步、计数或导出', async () => {
+        const a = crypto.randomUUID(), b = crypto.randomUUID(); await addPendingWord(word(), a); await addPendingSentence(sentence(), a);
+        expect(await getPendingCount(b)).toBe(0); expect(await getPendingCount()).toBe(0);
+        expect((await syncPendingOperations(b)).synced).toBe(0); expect(api).not.toHaveBeenCalled();
+        expect((await exportMaterialRecovery(b) as { operations: unknown[] }).operations).toEqual([]);
+        api.mockImplementation(async (_path, options) => accepted(options.body));
+        expect((await syncPendingOperations(a)).synced).toBe(2);
+        expect(api.mock.calls.every(call => call[1].userId === a)).toBe(true);
+        expect(await getMaterialOperations(a)).toEqual([]);
     });
-}
-
-describe('syncPendingOperations', () => {
-    beforeEach(async () => {
-        await clearWordsCache();
-        await clearSentencesCache();
-        await clearReviewCache();
-        await clearReviewEventQueue();
-        eventRequest.mockReset();
-        fromMock.mockReset();
-    });
-
-    it('swaps the temp ID for the server UUID and removes the pending op', async () => {
-        // 1. user added a word offline → temp ID + pending op
-        const tempId = 'temp_1715587200000_abc';
-        await addPendingWord(makeWord({ id: tempId }));
-
-        // 2. supabase insert returns the server-assigned UUID
-        const serverId = '550e8400-e29b-41d4-a716-446655440000';
-        mockInsertResolves({ id: serverId });
-        // syncQueue also processes sentences — return empty for that path.
-        // (clearSentencesCache leaves the queue empty, so the sentence loop is a no-op
-        // and never calls supabase.from('saved_sentences') — no extra mock needed.)
-
-        // 3. run the sync
-        const result = await syncPendingOperations('user-123');
-
-        // 4. assert: synced count, temp ID gone, server ID present and synced, pending op cleared
-        expect(result.success).toBe(true);
-        expect(result.synced).toBe(1);
-        expect(result.failed).toBe(0);
-
-        const cached = await getAllCachedWords();
-        expect(cached).toHaveLength(1);
-        expect(cached[0].id).toBe(serverId);
-        expect(cached.map(w => w.id)).not.toContain(tempId);
-
-        const pending = await getPendingOperations();
-        expect(pending).toHaveLength(0);
-
-        // 5. assert: insert was called with the right user_id and word fields
-        expect(fromMock).toHaveBeenCalledWith('words');
-    });
-
-    it('returns failure and keeps the pending op when supabase insert errors', async () => {
-        const tempId = 'temp_should_stay';
-        await addPendingWord(makeWord({ id: tempId, word: 'banana' }));
-
-        mockInsertResolves(null, { message: 'unique violation', code: '23505' });
-
-        const result = await syncPendingOperations('user-123');
-
-        expect(result.success).toBe(false);
-        expect(result.synced).toBe(0);
-        expect(result.failed).toBe(1);
-        expect(result.errors[0]).toContain('unique violation');
-
-        // Pending op should still be queued for retry.
-        const pending = await getPendingOperations();
-        expect(pending).toHaveLength(1);
-
-        // Cache should still hold the temp-ID entry (not silently dropped).
-        const cached = await getAllCachedWords();
-        expect(cached.map(w => w.id)).toContain(tempId);
-    });
-
-    it('rejects sync when no userId is provided', async () => {
-        const result = await syncPendingOperations('');
-        expect(result.success).toBe(false);
-        expect(result.errors).toContain('No user ID');
-    });
-
-    it('bumps retryCount on failure so the same op is not retried forever', async () => {
-        await addPendingWord(makeWord({ id: 'temp_retry', word: 'kiwi' }));
-
-        mockInsertResolves(null, { message: 'boom', code: '500' });
-        await syncPendingOperations('user-123');
-
-        const pending = await getPendingOperations();
-        expect(pending).toHaveLength(1);
-        expect(pending[0].retryCount).toBe(1);
-    });
-
-    it('reports deadLettered when an op crosses the retry ceiling', async () => {
-        await addPendingWord(makeWord({ id: 'temp_cross', word: 'lime' }));
-        // 把重试次数顶到上限前一次（MAX-1）
-        for (let i = 0; i < MAX_SYNC_RETRIES - 1; i++) {
-            await incrementOperationRetry('add_temp_cross');
-        }
-
-        // 这次 insert 失败 → retryCount 从 MAX-1 增到 MAX，刚好跨过上限
-        mockInsertResolves(null, { message: 'still failing', code: '500' });
-        const result = await syncPendingOperations('user-123');
-
-        expect(result.failed).toBe(1);
-        expect(result.deadLettered).toBe(1);
-        // 跨过上限后不再计入待同步数（避免徽标永挂）
-        expect(await getPendingCount()).toBe(0);
-    });
-
-    it('skips ops at the retry ceiling: no request, not counted, data retained', async () => {
-        await addPendingWord(makeWord({ id: 'temp_dead', word: 'mango' }));
-        for (let i = 0; i < MAX_SYNC_RETRIES; i++) {
-            await incrementOperationRetry('add_temp_dead');
-        }
-
-        // 已达上限：getPendingCount 排除它
-        expect(await getPendingCount()).toBe(0);
-
-        // 再次同步：跳过该操作，不发起任何 supabase 调用（未设置 mock，被调用会抛错暴露问题）
-        const result = await syncPendingOperations('user-123');
-        expect(result.synced).toBe(0);
-        expect(result.failed).toBe(0);
-        expect(result.deadLettered).toBe(0);
-        expect(fromMock).not.toHaveBeenCalled();
-
-        // 数据仍保留在 IndexedDB（不丢数据）
-        const pending = await getPendingOperations();
-        expect(pending).toHaveLength(1);
-        const cached = await getAllCachedWords();
-        expect(cached.map(w => w.id)).toContain('temp_dead');
-    });
-
-    it('runs only once when called concurrently (in-flight mutex)', async () => {
-        await addPendingWord(makeWord({ id: 'temp_concurrent', word: 'nectarine' }));
-        const serverId = 'server-uuid-concurrent';
-
-        let insertCalls = 0;
-        fromMock.mockImplementation((table: string) => {
-            if (table === 'words') {
-                return {
-                    insert: () => {
-                        insertCalls++;
-                        return {
-                            select: () => ({
-                                single: () => Promise.resolve({ data: { id: serverId }, error: null }),
-                            }),
-                        };
-                    },
-                };
-            }
-            // saved_sentences：无 pending 操作，不会被真正调用
-            return { insert: vi.fn(), delete: vi.fn() };
+    it('提交成功但丢失回执：第二次使用同一UUID和正文，只创建一份云端记录', async () => {
+        const owner = crypto.randomUUID(), value = word(); await addPendingWord(value, owner);
+        const remote = new Map<string, Record<string, unknown>>(); let dropped = false;
+        api.mockImplementation(async (_path, options) => {
+            const body = options.body as Record<string, unknown>; remote.set(String(body.id), body);
+            if (!dropped) { dropped = true; throw new LearningApiError('network_error', '连接中断'); }
+            return accepted(body);
         });
-
-        const [r1, r2] = await Promise.all([
-            syncPendingOperations('user-123'),
-            syncPendingOperations('user-123'),
-        ]);
-
-        // 两次并发调用复用同一 Promise，insert 只发生一次
-        expect(insertCalls).toBe(1);
-        expect(r1).toBe(r2);
-        expect(r1.synced).toBe(1);
+        expect((await syncPendingOperations(owner)).failed).toBe(1); expect(await getPendingCount(owner)).toBe(1);
+        expect((await syncPendingOperations(owner)).synced).toBe(1); expect(remote.size).toBe(1);
+        expect(api.mock.calls[0][1].body).toEqual(api.mock.calls[1][1].body);
+        expect(api.mock.calls[1][1].body.id).toBe(value.id);
+        expect((await getAllCachedWords(owner))[0].id).toBe(value.id);
     });
-});
-
-describe('syncPendingOperations — review events', () => {
-    beforeEach(async () => {
-        await clearWordsCache();
-        await clearSentencesCache();
-        await clearReviewCache();
-        await clearReviewEventQueue();
-        fromMock.mockReset();
-        eventRequest.mockReset();
+    it('超过5次临时失败仍可恢复且始终可见，永久失败只能明确重试', async () => {
+        const owner = crypto.randomUUID(); await addPendingWord(word(), owner);
+        api.mockRejectedValue(new LearningApiError('unavailable', '临时不可用', 503));
+        for (let i = 0; i < 7; i++) await syncPendingOperations(owner);
+        expect(await getMaterialSyncStatus(owner)).toMatchObject({ pending: 1, failed: 0 }); expect(await getPendingCount(owner)).toBe(1);
+        api.mockRejectedValue(new LearningApiError('conflict', '冲突', 409)); await syncPendingOperations(owner);
+        expect(await getMaterialSyncStatus(owner)).toMatchObject({ pending: 0, failed: 1 }); expect(await getPendingCount(owner)).toBe(1);
+        api.mockClear(); await syncPendingOperations(owner); expect(api).not.toHaveBeenCalled();
+        api.mockImplementation(async (_path, options) => accepted(options.body));
+        expect((await syncPendingOperations(owner, { retryFailed: true })).synced).toBe(1); expect(await getPendingCount(owner)).toBe(0);
     });
-
-    const attempt = (id: string) => ({ id, word_id: 'word-a', grade: 'known' as const, source: 'web' as const, practiced_at: '2026-09-23T10:00:00Z', timezone: 'Europe/Berlin' });
-
-    it('preserves legacy pending states without uploading or counting them', async () => {
-        await upsertReviewState(makeReviewState('legacy-word'), 'pending_upsert');
-        const result = await syncPendingOperations('user-a');
-        expect(result.success).toBe(true);
-        expect(result.synced).toBe(0);
-        expect(fromMock).not.toHaveBeenCalled();
-        expect(eventRequest).not.toHaveBeenCalled();
-        expect(await getPendingReviewStates()).toHaveLength(1);
-        expect(await getPendingCount('user-a')).toBe(0);
+    it('网络未确定时阻塞FIFO，且请求有时间界限', async () => {
+        const owner = crypto.randomUUID(); await addPendingWord(word(), owner); await addPendingSentence(sentence(), owner);
+        api.mockRejectedValue(new LearningApiError('network_error', '断网'));
+        await syncPendingOperations(owner); expect(api).toHaveBeenCalledTimes(1);
+        expect(api.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal); expect(await getPendingCount(owner)).toBe(2);
     });
-
-    it('counts only current-account review events, and requires an account to count them', async () => {
-        await enqueueReviewEvent('user-a', attempt('a'));
-        await enqueueReviewEvent('user-b', attempt('b'));
-        await enqueueReviewEvent('user-b', attempt('c'));
-        expect(await getPendingCount('user-a')).toBe(1);
-        expect(await getPendingCount('user-b')).toBe(2);
-        expect(await getPendingCount()).toBe(0);
+    it('并发同步复用一次发送，完整保留句子分析信息', async () => {
+        const owner = crypto.randomUUID(), value = sentence(); await addPendingSentence(value, owner);
+        api.mockImplementation(async (_path, options) => accepted(options.body));
+        const [a, b] = await Promise.all([syncPendingOperations(owner), syncPendingOperations(owner)]);
+        expect(a.synced).toBe(1); expect(b.synced).toBe(1); expect(api).toHaveBeenCalledTimes(1);
+        expect(api.mock.calls[0][1].body).toMatchObject({ source_type: 'input', keywords: value.keywords, grammar: value.grammar, created_at: value.created_at });
     });
-
-    it('submits event payloads through the API, never direct state upserts', async () => {
-        await enqueueReviewEvent('user-a', attempt('a'));
-        eventRequest.mockResolvedValueOnce({ data: { event: {}, state: { word_id: 'word-a', due: '2026-09-26', interval_days: 3, ease: 2.5, reps: 1, lapses: 0, last_reviewed_at: '2026-09-23T10:00:00Z', updated_at: '2026-09-23T10:00:01Z' }, replayed: false } });
-        const result = await syncPendingOperations('user-a');
-        expect(result.synced).toBe(1);
-        expect(eventRequest).toHaveBeenCalledWith('/events', expect.objectContaining({ method: 'POST', userId: 'user-a', body: attempt('a') }));
-        expect(fromMock).not.toHaveBeenCalled();
-        expect(await getReviewEvents('user-a')).toEqual([]);
-        expect((await getReviewState('word-a', 'user-a'))?.reps).toBe(1);
+    it('保留旧无归属库供导出，绝不作为当前用户队列发送', async () => {
+        const opened = indexedDB.open('vocab-tracker-words-cache', 1);
+        const legacy = await new Promise<IDBDatabase>((resolve, reject) => { opened.onupgradeneeded = () => { opened.result.createObjectStore('words', { keyPath: 'id' }); opened.result.createObjectStore('pending_operations', { keyPath: 'id' }); }; opened.onsuccess = () => resolve(opened.result); opened.onerror = () => reject(opened.error); });
+        const tx = legacy.transaction(['words', 'pending_operations'], 'readwrite');
+        tx.objectStore('words').put(word()); tx.objectStore('pending_operations').put({ id: 'old-add', data: word() });
+        await new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); legacy.close();
+        const owner = crypto.randomUUID(); await syncPendingOperations(owner); expect(api).not.toHaveBeenCalled();
+        expect(await getAllCachedWords(owner)).toEqual([]); expect((await readLegacyMaterialData()).words).toHaveLength(1);
+        expect((await exportMaterialRecovery(owner) as { unknown_owner_legacy: { words: unknown[] } }).unknown_owner_legacy.words).toHaveLength(1);
+        await discardLegacyMaterialData();
+    });
+    it('原有复习事件仍按账号提交，不被词句改造覆盖', async () => {
+        const owner = crypto.randomUUID(), other = crypto.randomUUID();
+        const event = { id: crypto.randomUUID(), word_id: crypto.randomUUID(), grade: 'known' as const, source: 'web' as const, practiced_at: '2026-09-23T10:00:00Z', timezone: 'UTC' };
+        await enqueueReviewEvent(owner, event); await enqueueReviewEvent(other, { ...event, id: crypto.randomUUID() });
+        api.mockResolvedValue({ data: { event, state: { word_id: event.word_id, due: '2026-09-26', interval_days: 3, ease: 2.5, reps: 1, lapses: 0, last_reviewed_at: event.practiced_at, updated_at: event.practiced_at }, replayed: false } });
+        expect((await syncPendingOperations(owner)).synced).toBe(1); expect(await getReviewEvents(owner)).toEqual([]); expect(await getReviewEvents(other)).toHaveLength(1);
+    });
+    it('删除尚未确认时保留复习作答，云端确认后才清理对应状态与队列', async () => {
+        const owner = crypto.randomUUID(), value = word(); await setCachedWords([value], owner);
+        await saveReviewState({ wordId: value.id, due: '2000-01-01', intervalDays: 3, ease: 2.5, reps: 1, lapses: 0, lastReviewedAt: null, updatedAt: '2000-01-01T00:00:00Z' }, 'synced', owner);
+        const event = { id: crypto.randomUUID(), word_id: value.id, grade: 'known' as const, source: 'web' as const, practiced_at: '2026-09-23T10:00:00Z', timezone: 'UTC' };
+        await enqueueReviewEvent(owner, event); await markWordDeleted(value.id, owner);
+        api.mockRejectedValue(new LearningApiError('network_error', '断网'));
+        const { syncMaterialOperations } = await import('./materialQueue'); await syncMaterialOperations(owner);
+        expect((await getReviewEvents(owner))[0].event.id).toBe(event.id); expect(await getReviewState(value.id, owner)).toBeDefined();
+        api.mockResolvedValue({ data: { deleted: true } }); await syncMaterialOperations(owner);
+        expect(await getReviewEvents(owner)).toEqual([]); expect(await getReviewState(value.id, owner)).toBeUndefined();
     });
 });
