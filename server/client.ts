@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { ApiError } from './validation';
+import { ApiError } from './validation.js';
 
 let client: SupabaseClient | undefined;
 export function getServiceClient(): SupabaseClient {

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { getServiceClient } from './client';
-import { authenticate, newToken, requireScope, requireSession, TOKEN_COLUMNS, type Identity } from './auth';
-import { ApiError, DEFAULT_PREFERENCES, SCOPES, choice, integer, invalid, jsonBody, keys, str, strings, timezone, uuid, validateEvent } from './validation';
+import { getServiceClient } from './client.js';
+import { authenticate, newToken, requireScope, requireSession, TOKEN_COLUMNS, type Identity } from './auth.js';
+import { ApiError, DEFAULT_PREFERENCES, SCOPES, choice, integer, invalid, jsonBody, keys, str, strings, timezone, uuid, validateEvent } from './validation.js';
 
 const WORD_COLUMNS = 'id,word,meaning,language,example,example_cn,category,date,created_at,etymology';
 const SENTENCE_COLUMNS = 'id,sentence,sentence_cn,language,scene,source_type,source_words,keywords,grammar,created_at';

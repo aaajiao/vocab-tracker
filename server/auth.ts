@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { ApiError, SCOPES } from './validation';
+import { ApiError, SCOPES } from './validation.js';
 
 export interface Identity { userId: string; email?: string; scopes: string[]; kind: 'session' | 'token'; tokenId?: string }
 export function tokenHash(token: string) { return createHash('sha256').update(token).digest('hex'); }
