@@ -3,7 +3,7 @@
 A multi-language vocabulary learning app powered by AI. Enter a word and get Chinese translations, contextual examples, etymology analysis, and natural voice pronunciation — all generated automatically.
 
 ![React](https://img.shields.io/badge/React-19.0-61DAFB?logo=react)
-![Vite](https://img.shields.io/badge/Vite-7.3-646CFF?logo=vite)
+![Vite](https://img.shields.io/badge/Vite-8.3-646CFF?logo=vite)
 ![Tailwind](https://img.shields.io/badge/Tailwind_CSS-4.0-38B2AC?logo=tailwind-css)
 ![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4.1-412991?logo=openai)
 
@@ -31,7 +31,7 @@ A multi-language vocabulary learning app powered by AI. Enter a word and get Chi
 
 ### Prerequisites
 
-- [Bun](https://bun.sh/) 1.0+ (recommended) or Node.js 19+
+- [Bun](https://bun.sh/) 1.4.2 for package management and project scripts; Node.js 24 LTS for deployment-compatible Node tooling
 - [OpenAI API Key](https://platform.openai.com/api-keys) (required for AI features)
 
 ### Install & Run
@@ -77,10 +77,10 @@ Push to your Git repository. Vercel will auto-detect Vite and deploy. Configure 
 
 ## Tech Stack
 
-- **Frontend**: React 19, Vite 7, Tailwind CSS 4
+- **Frontend**: React 19, Vite 8, Tailwind CSS 4
 - **Backend / Storage**: Supabase (Auth + Postgres)
 - **AI**: OpenAI gpt-4.1 (translation & examples), OpenAI gpt-4o-mini-tts (audio)
-- **Runtime**: Bun
+- **Tooling / Runtime**: Bun 1.4.2, TypeScript 7 with TypeScript 6 API compatibility; Vercel functions run on Node.js 24. See [toolchain and local-network setup](docs/toolchain.md).
 
 ## Project Structure
 
@@ -97,7 +97,7 @@ src/
 └── services/            # API integrations (OpenAI, TTS, caching)
 ```
 
-Other top-level files: `CLAUDE.md` (agent dev guide), `SUPABASE_SETUP.md`, `schema.sql` (canonical DB schema), `migrations/` (one-shot SQL migrations), `vite.config.js`, `package.json`, `bun.lock`.
+Other top-level files: `CLAUDE.md` (agent dev guide), `SUPABASE_SETUP.md`, `schema.sql` (canonical DB schema), `migrations/` (one-shot SQL migrations), `vite.config.ts`, `package.json`, `bun.lock`.
 
 ## Supabase Setup
 
