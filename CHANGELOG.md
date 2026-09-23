@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.11.0 (2026-09-23)
+- Isolated word/sentence caches and pending writes by account; retained legacy unowned data as an explicit recovery backup.
+- Added durable write identities, recoverable retries and pending-change projection so failed saves, refreshes and account changes cannot silently lose or misassign materials.
+- Preserved full sentence analysis through the shared API and made browser delete/update operations session-only.
+- Fixed sentence drafts, save/undo recovery, review keyboard controls, long mobile words and virtual-list positioning; moved settings into an accessible drawer.
+- Updated the frontend and test toolchain, pinned dependencies, enabled TypeScript 7 with TypeScript 6 API compatibility, and restricted the development server to local access by default.
+
+## v1.10.0 (2026-09-23)
+- Default Codex practice selects 10 varied English/German word and sentence materials using the online review schedule.
+- Removed unnecessary learning preference choices and added scoped, idempotent vocabulary additions from Codex.
+- Published the installable review Skill alongside the app source and release assets.
+
 ## v1.9.0 (2026-09-23)
 - Added authenticated `/api/v1` vocabulary, review, sentences, preferences, practice sessions and event endpoints.
 - Added revocable scoped access tokens, connection settings and persistent conversation practice history.

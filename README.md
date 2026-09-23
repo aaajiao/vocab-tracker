@@ -2,9 +2,9 @@
 
 A multi-language vocabulary learning app powered by AI. Enter a word and get Chinese translations, contextual examples, etymology analysis, and natural voice pronunciation — all generated automatically.
 
-![React](https://img.shields.io/badge/React-19.0-61DAFB?logo=react)
+![React](https://img.shields.io/badge/React-19.3-61DAFB?logo=react)
 ![Vite](https://img.shields.io/badge/Vite-8.3-646CFF?logo=vite)
-![Tailwind](https://img.shields.io/badge/Tailwind_CSS-4.0-38B2AC?logo=tailwind-css)
+![Tailwind](https://img.shields.io/badge/Tailwind_CSS-4.3-38B2AC?logo=tailwind-css)
 ![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4.1-412991?logo=openai)
 
 ## Features
