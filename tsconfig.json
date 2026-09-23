@@ -23,7 +23,7 @@
         "esModuleInterop": true
     },
     "include": [
-        "src"
+        "src", "server", "api", "scripts", "tests/database"
     ],
     "references": [
         {

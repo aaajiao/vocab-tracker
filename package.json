@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:api": "bun server/dev.ts",
+    "typecheck": "tsc --noEmit",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
@@ -19,6 +21,8 @@
     "tailwindcss": "^4.1.18"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@types/bun": "1.4.2",
     "@types/node": "^25.0.3",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",

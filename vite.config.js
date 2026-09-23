@@ -103,8 +103,12 @@ export default defineConfig({
     // Vercel uses rewrites in vercel.json for production
     // OpenAI API 代理（仅开发环境）
     // Vercel 生产环境使用 vercel.json 中的 rewrites 配置
-    proxy: {
-      '/api/openai': {
+        proxy: {
+            '/api/v1': {
+                target: 'http://127.0.0.1:3001',
+                changeOrigin: true,
+            },
+            '/api/openai': {
         target: 'https://api.openai.com',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/openai/, ''),

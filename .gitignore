@@ -45,7 +45,13 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 server.log
+.vercel/
+supabase/.temp/
+supabase/.branches/
+artifacts/
 
 # OpenCode (personal tool config)
 .claude/
 .opencode/
+.vercel
+.env*
