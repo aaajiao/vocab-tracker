@@ -2,7 +2,9 @@
 
 按日期命名的一次性 SQL 迁移脚本，记录数据库 schema / 权限的演进过程。
 
-**新项目无需运行这些文件** —— 直接在 Supabase SQL Editor 完整执行 [`schema.sql`](../schema.sql)，即可创建三张应用表及其索引、显式授权和 RLS 策略。设置步骤见 [`SUPABASE_SETUP.md`](../SUPABASE_SETUP.md)。
+**新项目无需运行这些文件** —— 直接在 Supabase SQL Editor 完整执行 [`schema.sql`](../schema.sql)，即可创建应用表及其索引、显式授权和 RLS 策略。设置步骤见 [`SUPABASE_SETUP.md`](../SUPABASE_SETUP.md)。
+
+2026-09-23 起的新迁移由 Supabase CLI 创建，位于 [`supabase/migrations/`](../supabase/migrations/)。Codex 接入的两阶段升级顺序见 [部署说明](../docs/codex-learning-api.md#开发与部署)；先新增数据结构，再部署网页/API，最后停止旧客户端直接写复习状态。
 
 这些文件保留下来仅作为：
 

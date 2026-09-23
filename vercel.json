@@ -1,5 +1,11 @@
 {
+    "installCommand": "bun install --frozen-lockfile",
+    "buildCommand": "bun run build",
     "rewrites": [
+        {
+            "source": "/api/v1/:route(.*)",
+            "destination": "/api/learning?__route=:route"
+        },
         {
             "source": "/api/openai/(.*)",
             "destination": "https://api.openai.com/$1"

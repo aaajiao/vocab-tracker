@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.9.0 (2026-09-23)
+- Added authenticated `/api/v1` vocabulary, review, sentences, preferences, practice sessions and event endpoints.
+- Added revocable scoped access tokens, connection settings and persistent conversation practice history.
+- Added an installable Codex review Skill with secure Keychain storage, bounded retries and recoverable writes.
+- Unified website and Codex review results through atomic, idempotent events; preserved late offline history and isolated caches by account.
+- Added PostgreSQL, API, browser, offline queue and CLI verification, including actual Keychain storage checks.
+- Kept realtime voice in Codex; no separate in-app voice engine or additional model API is required for Codex practice.
+
 ## v1.6.2 (2026-05-13)
 - **AI Model**: Switched from `gpt-5-mini` (reasoning) to `gpt-4.1` (non-reasoning) for faster responses and simpler API parameters.
 - **Export Format**: Changed vocabulary export from CSV to Markdown for better readability.

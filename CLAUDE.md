@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Runtime**: Bun only (Node.js is NOT installed). Use `bun` instead of `npm`/`npx`.
 
-**Pre-commit**: Run `bun x tsc` (zero errors), `bun run test` (all pass), and `bun run build` (must succeed). Tests cover services-layer pure logic and IndexedDB cache; UI is still verified manually.
+**Pre-commit**: Run `bun run typecheck`, `bun run test:all`, and `bun run build`. Tests cover services, IndexedDB, React lifecycle, server authorization, PGlite/PostgreSQL and the Codex CLI. Verify changed UI in a browser as well.
 
 **Test setup**: Vitest + happy-dom + fake-indexeddb. Tests live alongside source as `*.test.ts`. Config: `vitest.config.ts`. Setup file: `src/test/setup.ts`. See `src/services/*.test.ts` for examples — when adding a new service, add a test file co-located with it.
 
@@ -66,12 +66,16 @@ Dev server proxies `/api/openai` → `https://api.openai.com` (configured in `vi
 
 ### Supabase Schema
 
+The Codex integration adds `api_access_tokens`, `learning_preferences`, `practice_sessions`, and `review_events`. These tables and learning RPCs are service-role-only; the server validates JWTs/personal tokens and passes the trusted owner ID. Personal tokens are hashed, scoped, expiring and revocable. Browser and Codex submit immutable review events via `/api/v1/events`; direct authenticated writes to `review_states` are revoked after the upgrade. See `docs/codex-learning-api.md` for deployment order and `docs/codex-integration-plan.md` for API contracts. New CLI-generated migrations are under `supabase/migrations/`; keep historical `migrations/` unchanged.
+
+`server/` contains the authenticated API implementation, `api/learning.ts` its Vercel entrypoint. `bun run dev:api` starts the loopback development API, proxied by Vite. `SUPABASE_SERVICE_ROLE_KEY` is server-only; never give it a `VITE_` prefix. The installable companion Skill lives in `integrations/codex/vocab-review/` and is installed with `bun run codex:install`. It has no local word database; only credentials, pending writes and session handles.
+
 Three tables with Row Level Security (authenticated users can only access their own data):
 - `words` — id, user_id, word, meaning, language ('en'|'de'), example, example_cn, category ('daily'|'professional'|'formal'|''), date, created_at, etymology. PK: id. FK: user_id → auth.users(id) (no ON DELETE CASCADE). No UNIQUE constraint — dedup is enforced client-side by lowercase-normalizing only the comparison; the stored word preserves its original casing (e.g. German nouns like "Haus").
 - `saved_sentences` — id, user_id, sentence, sentence_cn, language, scene, source_type ('word'|'combined'|'input'), source_words (JSONB array), keywords (JSONB array — 句子输入的重点词 `{word,meaning,partOfSpeech?}`), grammar (JSONB array — 句子输入的语法点 `{point,explanation}`), created_at. PK: id. FK: user_id → auth.users(id) (no ON DELETE CASCADE).
 - `review_states` — word_id, user_id, due, interval_days, ease, reps, lapses, last_reviewed_at, updated_at. PK: word_id. FK: word_id → words(id) ON DELETE CASCADE (deleting a word also removes its review state); user_id → auth.users(id) (no ON DELETE CASCADE). Index: (user_id, due). One SRS review state per word.
 
-All three tables explicitly grant SELECT, INSERT, UPDATE, DELETE to `authenticated` and `service_role`, revoke all grants from `anon`, and enable RLS. RLS restricts `authenticated` access by `auth.uid() = user_id`; `service_role` bypasses RLS and must remain server-only. `saved_sentences` has SELECT, INSERT, and DELETE policies (the app does not update saved sentences); the other tables also have an UPDATE policy.
+All application tables enable RLS and revoke `anon` access. `words` and `saved_sentences` keep authenticated CRUD grants with owner policies (`saved_sentences` has no UPDATE policy). `review_states` grants authenticated SELECT only; mutations use the server event API. The four learning API tables grant access only to `service_role`. This role bypasses RLS and must remain server-only.
 
 Supabase began gradually disabling automatic grants on new `public` tables for new projects on 2026-05-30. From 2026-10-30, existing projects also stop automatically granting access to tables created afterward; grants on existing tables remain. See [Supabase discussion #45329](https://github.com/orgs/supabase/discussions/45329). Every new application table must declare the required grants and RLS policies explicitly. Revoke any existing `anon` grants when anonymous access is not needed, including grants inherited from older project defaults.
 

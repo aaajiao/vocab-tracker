@@ -23,6 +23,7 @@ A multi-language vocabulary learning app powered by AI. Enter a word and get Chi
 - **Search** — Filter by word or translation
 - **Date Grouping** — Vocabulary organized by addition date
 - **Markdown Export** — Export vocabulary data as Markdown
+- **Codex Practice** — Authenticated vocabulary API, personal review Skill, contextual conversations, saved practice history, and shared review scheduling
 - **Cloud Sync** — Supabase backend for cross-device sync
 - **PWA + Offline** — Full offline access via Service Worker + IndexedDB; offline edits auto-sync when back online
 
@@ -56,6 +57,12 @@ bun run dev
 ```
 
 Visit http://localhost:5173
+
+## Codex vocabulary practice
+
+Open **Settings → 连接 Codex** to create a scoped access token. Install the companion Skill with `bun run codex:install`, then connect in your terminal. Codex can read your saved words, lead recall or conversation practice, and save completed attempts and summaries back to this app. See [setup, API, and deployment details](docs/codex-learning-api.md).
+
+For local API development, run `bun run dev:api` alongside `bun run dev`. Set `SUPABASE_SERVICE_ROLE_KEY` in your ignored local environment and Vercel's server environment; never prefix this secret with `VITE_`.
 
 ## macOS App
 

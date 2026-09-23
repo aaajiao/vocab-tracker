@@ -7,7 +7,7 @@
 <a name="english"></a>
 ## 🇬🇧 English
 
-Use [`schema.sql`](./schema.sql) as the single source of truth for a **new database**. It creates all three tables, indexes, explicit Data API grants, and Row Level Security (RLS) policies. This guide explains that setup without maintaining a second copy of the table definitions.
+Use [`schema.sql`](./schema.sql) as the single source of truth for a **new database**. It creates the vocabulary tables and Codex learning tables, indexes, explicit grants, and RLS. Existing deployments must follow the [two-phase learning API upgrade](./docs/codex-learning-api.md#开发与部署).
 
 For an **existing database**, use the applicable scripts in [`migrations/`](./migrations/README.md). `CREATE TABLE IF NOT EXISTS` does not update existing columns or constraints, so rerunning `schema.sql` is not a substitute for an upgrade migration.
 
@@ -39,9 +39,9 @@ VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
 
 #### Data API permissions and RLS
 
-For all three tables, `schema.sql` explicitly grants `SELECT`, `INSERT`, `UPDATE`, and `DELETE` to `authenticated` and `service_role`, revokes all table privileges from `anon`, and enables RLS. Revoking `anon` also removes any grants inherited from older project defaults. Signed-in users are restricted to their own rows by `auth.uid() = user_id`; `service_role` is reserved for trusted server-side use and bypasses RLS.
+All tables enable RLS and revoke `anon` access. `words` and `saved_sentences` retain authenticated CRUD grants with owner policies. `review_states` grants authenticated SELECT only. `api_access_tokens`, `learning_preferences`, `practice_sessions`, and `review_events` are available only through the authenticated learning API, whose service-side role verifies the owner. `service_role` bypasses RLS and must never be exposed to a browser or Codex client.
 
-Grants and RLS have different purposes: grants allow a role to access a table; policies decide which rows and operations are allowed. `saved_sentences` has policies for reading, inserting, and deleting; `words` and `review_states` also have an update policy. A table grant alone does not permit an operation that RLS disallows.
+Grants allow access to a table; policies limit rows and operations. `saved_sentences` has reading, inserting and deleting policies; `words` also has an update policy. Review mutations go through the event API. A table grant alone does not bypass RLS.
 
 Supabase began rolling out explicit opt-in for newly created tables in new projects on **2026-05-30**. On **2026-10-30**, existing projects also stop automatically granting Data API access to tables created afterward in `public`. **Existing tables retain their current grants.** Our schema already includes explicit grants, so it does not depend on automatic table grants. See the [official announcement](https://github.com/orgs/supabase/discussions/45329).
 
@@ -65,7 +65,7 @@ For every future table exposed through the Data API, include explicit grants, RL
 ### Step 4: Verify the Setup
 
 1. Confirm that `words`, `saved_sentences`, and `review_states` exist in **Table Editor** and have RLS enabled.
-2. Run the read-only [permission check below](#permission-check) in SQL Editor. Expect **nine rows**: three roles for each of the three tables. `rls_enabled` and `schema_usage` should be `true` throughout; all four operation flags should be `true` for `authenticated` and `service_role`, and `false` for `anon`.
+2. Run the [permission check below](#permission-check). The three original tables produce nine rows: `anon` has no access; `service_role` has CRUD; `authenticated` has CRUD on words/sentences and SELECT only on review_states. Also confirm the four learning tables enable RLS and are service-role-only.
 3. Sign in to the app, add a word, save a directly entered sentence, and complete a review. Reload the app and confirm the records remain. Check that the review state appears on another signed-in device; local caching can otherwise conceal a missing `review_states` table.
 
 ---
@@ -73,7 +73,7 @@ For every future table exposed through the Data API, include explicit grants, RL
 <a name="chinese"></a>
 ## 🇨🇳 中文
 
-**新建数据库**统一使用 [`schema.sql`](./schema.sql)。它会创建全部三张表、索引、显式 Data API 授权和行级安全（RLS）策略。本指南解释设置步骤，表结构以该文件为准，避免维护多份建表 SQL。
+**新建数据库**统一使用 [`schema.sql`](./schema.sql)。它会创建词汇和 Codex 学习表、索引、显式授权与 RLS。已有数据库按[学习 API 升级顺序](./docs/codex-learning-api.md#开发与部署)分阶段迁移。
 
 **已有数据库**请按需执行 [`migrations/`](./migrations/README.md) 中的升级脚本。`CREATE TABLE IF NOT EXISTS` 不会更新现有列或约束，因此重新运行 `schema.sql` 不能代替升级迁移。
 
@@ -95,7 +95,7 @@ VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
 
 1. 在 Supabase 控制台打开 **SQL Editor** → **New Query**。
 2. 将 [`schema.sql`](./schema.sql) 的完整内容复制到编辑器并执行。
-3. 确认执行成功。文件会依次创建以下三张表：
+3. 确认执行成功。原有三张业务表如下，另有四张学习 API 表：`api_access_tokens`、`learning_preferences`、`practice_sessions`、`review_events`。
 
 | 表 | 内容与关联 |
 |---|---|
@@ -105,9 +105,9 @@ VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
 
 #### Data API 权限与 RLS
 
-`schema.sql` 会为三张表显式授予 `authenticated` 和 `service_role` 角色 `SELECT`、`INSERT`、`UPDATE`、`DELETE` 权限，撤销 `anon` 的全部表权限，并启用 RLS。显式撤销 `anon` 也会收回旧项目默认设置曾授予的权限。登录用户受 `auth.uid() = user_id` 策略限制，只能访问自己的行；`service_role` 仅供可信服务端使用，会绕过 RLS。
+所有表均启用 RLS 并撤销 `anon` 权限。词汇和收藏句保留登录用户的 CRUD 授权及本人数据策略；复习状态仅允许登录用户读取，通过事件 API 更新。四张学习 API 表仅授权服务端 `service_role`，由 API 验证账号归属。服务角色密钥禁止放入网页、Codex 令牌或任何 `VITE_` 环境变量。
 
-授权和 RLS 分工不同：授权决定角色能否访问表，策略决定可以访问哪些行、执行哪些操作。`saved_sentences` 配置了读取、插入、删除策略；`words` 和 `review_states` 还配置了更新策略。获得表权限不代表可以绕过 RLS 执行操作。
+授权决定能否访问表，策略决定可访问的行与操作。收藏句配置读、增、删策略；词汇还有更新策略；复习状态通过事件 API 修改。获得表权限不代表可以绕过 RLS。
 
 Supabase 从 **2026-05-30** 开始逐步对新项目采用新建表需显式授权的规则；从 **2026-10-30** 起，现有项目也不再为之后在 `public` 中创建的表自动授予 Data API 权限。**已有表保留当前授权。** 本项目的建表脚本已包含显式授权，不依赖自动表授权。详情见[官方公告](https://github.com/orgs/supabase/discussions/45329)。
 
@@ -131,7 +131,7 @@ Supabase 从 **2026-05-30** 开始逐步对新项目采用新建表需显式授�
 ### 步骤四：验证设置
 
 1. 在 **Table Editor** 中确认 `words`、`saved_sentences`、`review_states` 均已创建，并已启用 RLS。
-2. 在 SQL Editor 运行下方只读的[权限检查](#permission-check)。预期返回 **9 行**，即每张表对应三个角色。所有行的 `rls_enabled` 和 `schema_usage` 应为 `true`；`authenticated` 和 `service_role` 的四项操作权限应全为 `true`，`anon` 应全为 `false`。
+2. 运行下方[权限检查](#permission-check)。原有三张表返回9行：anon无权限；service_role有CRUD；authenticated对词汇/句子有CRUD授权，对review_states仅有SELECT。另外确认四张学习表开启RLS、仅授权service_role。
 3. 登录应用，添加单词、保存直接输入的句子，并完成一次复习。刷新后确认记录仍在，再用另一台已登录设备确认复习状态同步。仅检查本地缓存可能掩盖缺少 `review_states` 表的问题。
 
 ---
