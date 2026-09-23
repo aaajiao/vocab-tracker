@@ -37,10 +37,12 @@ CREATE INDEX IF NOT EXISTS idx_words_language ON public.words(language);
 CREATE INDEX IF NOT EXISTS idx_words_date     ON public.words(date);
 
 -- Data API 授权
--- 2026-05-30 起新项目必须显式 GRANT，2026-10-30 对所有现有项目强制执行。
+-- Supabase 从 2026-05-30 起逐步为新项目停用 public 新建表的默认授权；
+-- 2026-10-30 起现有项目也停止对之后新建的表自动授权，已有表权限保留。
+-- 本文件显式 GRANT，因此建表不依赖项目的默认授权设置。
 -- `anon` 无任何权限 —— 本应用所有数据均需登录访问。
--- 注意：Supabase 对 public schema 有默认授权，CREATE TABLE 时会自动把全部权限
--- 授给 anon，必须显式 REVOKE 收掉，只写「不 GRANT」是不够的。
+-- 若项目仍有旧的默认授权，CREATE TABLE 可能已给 anon 权限；
+-- 显式 REVOKE 会收回这些权限，只写「不 GRANT」不会撤销已有授权。
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.words TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.words TO service_role;
 REVOKE ALL ON public.words FROM anon;
@@ -94,7 +96,7 @@ CREATE TABLE IF NOT EXISTS public.saved_sentences (
 CREATE INDEX IF NOT EXISTS idx_saved_sentences_user_id  ON public.saved_sentences(user_id);
 CREATE INDEX IF NOT EXISTS idx_saved_sentences_language ON public.saved_sentences(language);
 
--- Data API 授权（同上策略，含收掉 anon 默认授权）
+-- Data API 授权（同上策略，收回 anon 可能已有的权限）
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.saved_sentences TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.saved_sentences TO service_role;
 REVOKE ALL ON public.saved_sentences FROM anon;
@@ -143,7 +145,7 @@ CREATE TABLE IF NOT EXISTS public.review_states (
 -- 索引：按用户 + 到期日查询「今日到期」
 CREATE INDEX IF NOT EXISTS idx_review_states_user_due ON public.review_states(user_id, due);
 
--- Data API 授权（同 words 表策略，含收掉 anon 默认授权）
+-- Data API 授权（同 words 表策略，收回 anon 可能已有的权限）
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.review_states TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.review_states TO service_role;
 REVOKE ALL ON public.review_states FROM anon;
@@ -176,7 +178,7 @@ CREATE POLICY "Users can delete own review states"
 -- ============================================================
 -- 验证（可选）：查看授权情况
 -- ============================================================
--- 期望结果：authenticated / service_role / postgres 各 1 行，无 anon
+-- 期望结果：每张表的 authenticated / service_role / postgres 各 1 行，无 anon
 --
 -- SELECT
 --     table_name, grantee,
