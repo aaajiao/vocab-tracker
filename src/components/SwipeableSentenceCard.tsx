@@ -1,4 +1,4 @@
-import { useState, useRef, memo } from 'react';
+import { useState, useRef, useEffect, memo } from 'react';
 import { Icons } from './Icons';
 import type { SavedSentence } from '../types';
 import { SOURCE_TYPE_LABELS } from '../constants';
@@ -15,15 +15,19 @@ interface SwipeableSentenceCardProps {
 function SwipeableSentenceCard({ sentence, onDelete, onSpeak, speakingId, cached }: SwipeableSentenceCardProps) {
     const [offset, setOffset] = useState(0);
     const [swiping, setSwiping] = useState(false);
-    const [hovering, setHovering] = useState(false);
     const [grammarOpen, setGrammarOpen] = useState(false);
     const [swipeDirection, setSwipeDirection] = useState<'horizontal' | 'vertical' | null>(null);
+    const deleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => () => { if (deleteTimer.current) clearTimeout(deleteTimer.current); }, []);
+    const touchActive = useRef(false);
     const startX = useRef(0);
     const startY = useRef(0);
     const currentX = useRef(0);
     const currentY = useRef(0);
 
     const handleTouchStart = (e: React.TouchEvent) => {
+        if ((e.target as HTMLElement).closest('button, input, textarea, select, a')) { touchActive.current = false; return; }
+        touchActive.current = true;
         startX.current = e.touches[0].clientX;
         startY.current = e.touches[0].clientY;
         currentX.current = startX.current;
@@ -58,12 +62,14 @@ function SwipeableSentenceCard({ sentence, onDelete, onSpeak, speakingId, cached
     };
 
     const handleTouchEnd = () => {
+        if (!touchActive.current) return;
+        touchActive.current = false;
         setSwiping(false);
         setSwipeDirection(null);
 
         if (offset < -60) {
             setOffset(-100);
-            setTimeout(() => onDelete(), 200);
+            deleteTimer.current = setTimeout(() => { void Promise.resolve(onDelete()).catch(() => {}).finally(() => setOffset(0)); }, 200);
         } else {
             setOffset(0);
         }
@@ -74,8 +80,6 @@ function SwipeableSentenceCard({ sentence, onDelete, onSpeak, speakingId, cached
     return (
         <div
             className="relative overflow-hidden rounded-xl mb-3"
-            onMouseEnter={() => setHovering(true)}
-            onMouseLeave={() => setHovering(false)}
         >
             {/* Swipe delete background (mobile) */}
             <div
@@ -94,6 +98,7 @@ function SwipeableSentenceCard({ sentence, onDelete, onSpeak, speakingId, cached
                 onTouchStart={handleTouchStart}
                 onTouchMove={handleTouchMove}
                 onTouchEnd={handleTouchEnd}
+                onTouchCancel={() => { touchActive.current = false; setOffset(0); setSwiping(false); setSwipeDirection(null); }}
             >
                 <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
@@ -109,14 +114,15 @@ function SwipeableSentenceCard({ sentence, onDelete, onSpeak, speakingId, cached
                     </div>
                     {/* Desktop delete button (hover devices only) */}
                     <button
-                        className={`p-1.5 rounded-lg text-red-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all hover-device-show ${hovering ? 'opacity-100' : 'opacity-0'}`}
+                        className={`p-1.5 rounded-lg text-red-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all shrink-0 focus-visible:ring-2 focus-visible:ring-red-400`}
                         onClick={(e) => { e.stopPropagation(); onDelete(); }}
                         title="移除收藏"
+                        aria-label="移除收藏"
                     >
                         <Icons.Trash />
                     </button>
                 </div>
-                <div className="text-base text-slate-800 dark:text-slate-200 mb-1 leading-relaxed">{s.sentence}</div>
+                <div className="text-base text-slate-800 dark:text-slate-200 mb-1 leading-relaxed break-words">{s.sentence}</div>
                 <div className="text-sm text-slate-500 dark:text-slate-400 mb-2">{s.sentence_cn}</div>
                 {s.source_type === 'input' ? (
                     <>

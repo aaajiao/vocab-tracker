@@ -1,4 +1,4 @@
-import { useRef, memo, useState, useMemo, useCallback } from 'react';
+import { useRef, memo, useState, useMemo, useCallback, useLayoutEffect } from 'react';
 import type { VirtualWordListProps, Word } from '../types';
 import SwipeableCard from './SwipeableCard';
 import { Icons } from './Icons';
@@ -28,6 +28,20 @@ function VirtualWordList({
     saveSentence, deleteSentence, isSentenceSaved, getSavedSentenceId, savingId
 }: VirtualWordListProps) {
     const listRef = useRef<HTMLDivElement>(null);
+    const [scrollMargin, setScrollMargin] = useState(0);
+    useLayoutEffect(() => {
+        const list = listRef.current;
+        if (!list) return;
+        const measure = () => {
+            const offset = list.getBoundingClientRect().top + window.scrollY;
+            setScrollMargin(previous => Math.abs(previous - offset) > 0.5 ? offset : previous);
+        };
+        measure();
+        const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+        observer?.observe(list.parentElement || list);
+        window.addEventListener('resize', measure);
+        return () => { observer?.disconnect(); window.removeEventListener('resize', measure); };
+    }, []);
     const [expandedEtymology, setExpandedEtymology] = useState<Set<string>>(() => new Set());
 
     const toggleEtymology = (wordId: string) => {
@@ -85,6 +99,7 @@ function VirtualWordList({
         getItemKey,
         estimateSize,
         overscan: 5,
+        scrollMargin,
     });
 
     return (
@@ -111,7 +126,7 @@ function VirtualWordList({
                                     top: 0,
                                     left: 0,
                                     width: '100%',
-                                    transform: `translateY(${virtualRow.start}px)`,
+                                    transform: `translateY(${virtualRow.start - scrollMargin}px)`,
                                 }}
                                 className="flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 pt-4 pb-2"
                             >
@@ -135,7 +150,7 @@ function VirtualWordList({
                                 top: 0,
                                 left: 0,
                                 width: '100%',
-                                transform: `translateY(${virtualRow.start}px)`,
+                                transform: `translateY(${virtualRow.start - scrollMargin}px)`,
                                 paddingBottom: '16px',
                             }}
                         >
@@ -148,14 +163,14 @@ function VirtualWordList({
                                         {word.language === 'en' ? '🇬🇧' : '🇩🇪'}
                                     </span>
                                     {word.category && <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getCategoryClass(word.category)}`}>{getCategoryLabel(word.category)}</span>}
-                                    <span className="text-lg font-bold text-slate-800 dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer inline-flex items-center gap-1 transition-colors" onClick={() => speakWord(word.word, word.language, setSpeakingId, word.id, apiKey, (key) => setCachedKeys(prev => new Set(prev).add(key)))}>
-                                        {word.word}
-                                        <button className={`p-1.5 rounded-full hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 active:scale-90 transition-all ${speakingId === word.id ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/30 animate-pulse-ring' : (cachedKeys.has(wordCacheKey) ? 'text-blue-400/80 dark:text-blue-400/60' : 'text-slate-400')}`}>
+                                    <button type="button" aria-label={`朗读 ${word.word}`} className="min-w-0 max-w-full text-left text-lg font-bold text-slate-800 dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 inline-flex items-center gap-1 transition-colors" onClick={() => speakWord(word.word, word.language, setSpeakingId, word.id, apiKey, (key) => setCachedKeys(prev => new Set(prev).add(key)))}>
+                                        <span className="min-w-0 break-words">{word.word}</span>
+                                        <span aria-hidden="true" className={`shrink-0 p-1.5 rounded-full hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 active:scale-90 transition-all ${speakingId === word.id ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/30 animate-pulse-ring' : (cachedKeys.has(wordCacheKey) ? 'text-blue-400/80 dark:text-blue-400/60' : 'text-slate-400')}`}>
                                             <Icons.Speaker playing={speakingId === word.id} cached={cachedKeys.has(wordCacheKey)} />
-                                        </button>
-                                    </span>
+                                        </span>
+                                    </button>
                                 </div>
-                                <div className="text-sm text-slate-600 dark:text-slate-300 mb-2 font-medium">{word.meaning}</div>
+                                <div className="text-sm text-slate-600 dark:text-slate-300 mb-2 font-medium break-words">{word.meaning}</div>
 
                                 {/* Etymology Section - Collapsible */}
                                 {word.etymology && (
@@ -182,7 +197,7 @@ function VirtualWordList({
 
                                 {word.example && (
                                     <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 relative group/example">
-                                        <div className="text-sm text-slate-700 dark:text-slate-300 mb-0.5 pr-14">{word.example}</div>
+                                        <div className="text-sm text-slate-700 dark:text-slate-300 mb-0.5 pr-14 break-words">{word.example}</div>
                                         <div className="text-xs text-slate-500 dark:text-slate-400">{word.exampleCn}</div>
                                         <div className="absolute top-2 right-2 flex gap-1">
                                             <button
@@ -206,7 +221,7 @@ function VirtualWordList({
                                             >
                                                 <Icons.Star filled={isSentenceSaved(word.example)} />
                                             </button>
-                                            <button className={`p-2 rounded-lg text-slate-300 dark:text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 active:scale-90 transition-all ${regeneratingId === word.id ? 'animate-spin text-amber-600' : ''}`} onClick={() => handleRegenerate(word.id)} title="重新生成例句"><Icons.Refresh /></button>
+                                            <button className={`p-2 rounded-lg text-slate-300 dark:text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 active:scale-90 transition-all ${regeneratingId === word.id ? 'animate-spin text-amber-600' : ''}`} onClick={() => handleRegenerate(word.id)} disabled={regeneratingId === word.id} title="重新生成例句"><Icons.Refresh /></button>
                                         </div>
                                     </div>
                                 )}

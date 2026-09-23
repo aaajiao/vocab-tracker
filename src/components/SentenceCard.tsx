@@ -9,6 +9,8 @@ interface SentenceCardProps {
     needsConnection: boolean;         // 离线或 AI 失败 → 提示需联网
     speaking: boolean;                // 当前朗读中
     cached: boolean;                  // 该句音频是否已缓存
+    savingKeyword?: string | null;
+    onAnalyze?: () => void;
     saving: boolean;                  // 保存中
     onSpeak: () => void;
     onTranslationChange: (value: string) => void;
@@ -20,7 +22,7 @@ interface SentenceCardProps {
 
 // 句子输入卡片：展示原句、可编辑整句翻译、重点词（可加入生词本）、语法点，并提供收藏/取消
 function SentenceCard({
-    draft, loading, needsConnection, speaking, cached, saving,
+    draft, loading, needsConnection, speaking, cached, saving, savingKeyword, onAnalyze,
     onSpeak, onTranslationChange, onAddKeyword, isKeywordAdded, onSave, onCancel
 }: SentenceCardProps) {
     const [grammarOpen, setGrammarOpen] = useState(true);
@@ -60,7 +62,7 @@ function SentenceCard({
             {/* 离线 / AI 失败提示 */}
             {needsConnection && !loading && (
                 <div className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200/60 dark:border-amber-800/40 rounded-lg px-3 py-2">
-                    整句解析需要联网，可手动填写翻译后离线保存
+                    原文已更新，可手动填写翻译。{onAnalyze ? <button type="button" disabled={saving} onClick={onAnalyze} className="underline ml-1">重新解析</button> : '联网并启用网页 AI 后也可自动解析。'}
                 </div>
             )}
 
@@ -74,6 +76,8 @@ function SentenceCard({
                     <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">整句翻译</label>
                     <textarea
                         className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-slate-400 dark:focus:border-slate-500 text-slate-800 dark:text-slate-100 resize-none"
+                        aria-label="整句中文翻译"
+                        disabled={saving}
                         rows={2}
                         placeholder="整句中文翻译"
                         value={draft.translation}
@@ -109,9 +113,9 @@ function SentenceCard({
                                             : 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 active:scale-95'
                                             }`}
                                         onClick={() => { if (!added) onAddKeyword(kw); }}
-                                        disabled={added}
+                                        disabled={added || !!savingKeyword}
                                     >
-                                        {added ? '已在生词本' : (<><Icons.Plus /> 加入生词本</>)}
+                                        {savingKeyword === kw.word.trim() ? '保存中…' : added ? '已在生词本' : (<><Icons.Plus /> 加入生词本</>)}
                                     </button>
                                 </div>
                             );
@@ -148,13 +152,14 @@ function SentenceCard({
                 <button
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200 active:scale-95 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={onSave}
-                    disabled={loading || saving || !draft.translation.trim()}
+                    disabled={loading || saving || !draft.sentence.trim() || !draft.translation.trim()}
                 >
                     <Icons.Star filled={false} /> {saving ? '保存中...' : '保存到收藏'}
                 </button>
                 <button
                     className="px-4 py-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors font-medium"
                     onClick={onCancel}
+                    disabled={saving}
                 >
                     取消
                 </button>

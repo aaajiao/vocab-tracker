@@ -11,10 +11,11 @@ function ToastContainer({ toasts, onDismiss }: ToastContainerProps) {
     if (toasts.length === 0) return null;
 
     return (
-        <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
+        <div aria-live="polite" aria-atomic="false" className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
             {toasts.map(toast => (
                 <div
                     key={toast.id}
+                    role={toast.type === 'error' ? 'alert' : 'status'}
                     className={`
                         flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg animate-slide-in
                         ${toast.type === 'success' ? 'bg-emerald-500 text-white' : ''}
@@ -25,6 +26,7 @@ function ToastContainer({ toasts, onDismiss }: ToastContainerProps) {
                     <span className="text-sm flex-1">{toast.message}</span>
                     <button
                         onClick={() => onDismiss(toast.id)}
+                        aria-label="关闭提示"
                         className="p-1 rounded-lg hover:bg-white/20 transition-colors"
                     >
                         <Icons.Close />

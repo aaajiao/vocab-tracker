@@ -1,4 +1,4 @@
-import { useState, useMemo, memo, Fragment } from 'react';
+import { useState, useMemo, useRef, useId, memo, Fragment } from 'react';
 import type { ReviewCardProps } from '../types';
 import { Icons } from './Icons';
 import { LANGUAGE_CONFIG } from '../constants';
@@ -54,7 +54,10 @@ function ReviewCard({
     getCategoryClass, getCategoryLabel,
 }: ReviewCardProps) {
     const [flipped, setFlipped] = useState(false);
-    const [graded, setGraded] = useState(false);   // 防重复评级（快速连点）
+    const [graded, setGraded] = useState(false);
+    const gradingRef = useRef(false);
+    const questionId = useId();
+    const answerId = useId();   // 防重复评级（快速连点）
 
     const flag = word.language === 'en' ? '🇬🇧' : '🇩🇪';
     const langName = LANGUAGE_CONFIG[word.language].name;
@@ -95,10 +98,13 @@ function ReviewCard({
             (key) => setCachedKeys(prev => new Set(prev).add(key)));
     };
 
-    const handleGrade = (grade: 'forgot' | 'fuzzy' | 'known') => {
-        if (graded) return;
+    const handleGrade = async (grade: 'forgot' | 'fuzzy' | 'known') => {
+        if (gradingRef.current) return;
+        gradingRef.current = true;
         setGraded(true);
-        onGrade(grade);
+        try { if (!await onGrade(grade)) setGraded(false); }
+        catch { setGraded(false); }
+        finally { gradingRef.current = false; }
     };
 
     const speakerBtn = (
@@ -110,7 +116,8 @@ function ReviewCard({
                     : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
                 }`}
             onClick={handleSpeak}
-            title="朗读"
+            aria-label="朗读单词"
+            title="朗读单词"
         >
             <Icons.Speaker playing={speaking} cached={cached} />
         </button>
@@ -138,13 +145,12 @@ function ReviewCard({
 
     return (
         <div>
-            <div className="review-flip-scene w-full">
+            <button type="button" className="review-flip-scene block w-full text-left rounded-2xl focus-visible:ring-2 focus-visible:ring-amber-500" onClick={() => setFlipped(f => !f)} aria-label={flipped ? '返回问题' : '查看答案'} aria-describedby={flipped ? answerId : questionId}>
                 <div
                     className={`review-flip-card ${flipped ? 'is-flipped' : ''}`}
-                    onClick={() => setFlipped(f => !f)}
                 >
                     {/* 正面 */}
-                    <div className={`review-flip-face ${faceBase}`}>
+                    <div className={`review-flip-face ${faceBase}`} id={questionId} aria-hidden={flipped} ref={(node) => { if (node) node.inert = flipped; }}>
                         {useCloze ? (
                             // 挖空模式正面：例句（目标词 → 空格）+ 中译，不放 TTS（避免泄露答案）
                             <div className="flex flex-col justify-center gap-4 min-h-[13rem] py-8 px-5">
@@ -163,7 +169,6 @@ function ReviewCard({
                                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${langPill}`}>{flag} {langName}</span>
                                 <div className="flex items-center gap-2">
                                     <span className="text-3xl font-bold text-slate-800 dark:text-slate-100 break-words">{word.word}</span>
-                                    {speakerBtn}
                                 </div>
                                 <span className="text-xs text-slate-400 dark:text-slate-500">点击卡片查看释义</span>
                             </div>
@@ -171,12 +176,11 @@ function ReviewCard({
                     </div>
 
                     {/* 背面（两种模式共用）：释义 + 分类 chip + 例句（目标词高亮）+ 中译 + 词源 */}
-                    <div className={`review-flip-face review-flip-back ${faceBase}`}>
+                    <div className={`review-flip-face review-flip-back ${faceBase}`} id={answerId} aria-hidden={!flipped} ref={(node) => { if (node) node.inert = !flipped; }}>
                         <div className="flex flex-col gap-3 min-h-[13rem] py-6 px-5">
                             <div className="flex items-center gap-2 flex-wrap">
                                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${langPill}`}>{flag}</span>
                                 <span className="text-2xl font-bold text-slate-800 dark:text-slate-100 break-words">{word.word}</span>
-                                {speakerBtn}
                                 {word.category && (
                                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getCategoryClass(word.category)}`}>
                                         {getCategoryLabel(word.category)}
@@ -201,7 +205,8 @@ function ReviewCard({
                         </div>
                     </div>
                 </div>
-            </div>
+            </button>
+            {(!useCloze || flipped) && <div className="mt-2 flex justify-center">{speakerBtn}</div>}
 
             {/* 三键评分：😵 不认识 / 🤔 模糊 / ✅ 认识，下方小字为下次间隔预览 */}
             <div className="grid grid-cols-3 gap-2 mt-4">

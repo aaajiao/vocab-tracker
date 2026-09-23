@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import type { Word, SentenceData, ExpansionPreviewItem, SentenceAnalysis, SentenceKeyword } from './types';
 
 // Components
@@ -6,6 +6,7 @@ import { Icons } from './components/Icons';
 import VirtualWordList from './components/VirtualWordList';
 import AuthForm from './components/AuthForm';
 import SettingsPanel from './components/SettingsPanel';
+import SettingsDialog from './components/SettingsDialog';
 import UndoToast from './components/UndoToast';
 import ToastContainer from './components/ToastContainer';
 import SwipeableSentenceCard from './components/SwipeableSentenceCard';
@@ -23,6 +24,7 @@ import { speakWord } from './services/tts';
 import { generateCacheKey } from './services/audioCache';
 import { classifyInput } from './services/inputHeuristic';
 import { filterSavedSentences, type SentenceLanguageFilter } from './services/sentenceFilter';
+import { supabase } from './supabaseClient';
 import { getLegacyReviewBackup, discardLegacyReviewBackup } from './services/reviewCache';
 import { getReviewEvents } from './services/reviewEventQueue';
 
@@ -55,7 +57,7 @@ function App() {
     const { deletedItem, markDeleted, handleUndo, dismiss: dismissUndo } = useUndo();
 
     // Network status
-    const { isOnline, pendingCount, isSyncing: networkSyncing, syncNow, refreshPendingCount } = useNetworkStatus({
+    const { isOnline, pendingCount, failedCount = 0, isSyncing: networkSyncing, syncNow, refreshPendingCount } = useNetworkStatus({
         userId: user?.id,
         onSyncComplete: (synced, failed, deadLettered) => {
             if (synced > 0) {
@@ -76,7 +78,7 @@ function App() {
     });
 
     const {
-        words, loading: wordsLoading, syncing,
+        words, pendingWordIds, loading: wordsLoading, syncing,
         addWord, addWords, deleteWord, updateWordExample, restoreWord,
         getFilteredWords, getGroupedByDate, stats,
         refreshFromServer
@@ -111,7 +113,7 @@ function App() {
         isSessionFinished: reviewFinished,
         summary: reviewSummary,
         startSession, startAheadSession, nextRound, endSession,
-        gradeWord, previewFor, removeReviewState,
+        gradeWord, previewFor,
         refreshFromServer: refreshReviewFromServer, legacyPendingCount, failedEventCount,
     } = useReview({
         userId: user?.id,
@@ -163,6 +165,7 @@ function App() {
         return () => { window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
     }, [user?.id, refreshFromServer, refreshSentencesFromServer, refreshReviewFromServer]);
     const [newPassword, setNewPassword] = useState('');
+    const [passwordSaving, setPasswordSaving] = useState(false);
     const [showSentence, setShowSentence] = useState(false);
     const [sentenceData, setSentenceData] = useState<SentenceData | null>(null);
     const [sentenceLoading, setSentenceLoading] = useState(false);
@@ -177,6 +180,11 @@ function App() {
     } | null>(null);
 
     const inputRef = useRef<HTMLInputElement>(null);
+    const accountRef = useRef(user?.id);
+    accountRef.current = user?.id;
+    const generationSeq = useRef(0);
+    const [savingKeyword, setSavingKeyword] = useState<string | null>(null);
+    const keywordLock = useRef(false);
     const aiTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const ignoreFetch = useRef(false);
     // AI 请求序号：每次发起 ++，回填前校验仍是最新，避免双请求竞态（后返回者覆盖）
@@ -188,7 +196,18 @@ function App() {
     const inputModeRef = useRef(inputMode);
     inputModeRef.current = inputMode;
 
-    const loading = authLoading || wordsLoading;
+    const loading = authLoading || (wordsLoading && words.length === 0);
+
+    useLayoutEffect(() => {
+        aiSeqRef.current++; generationSeq.current++;
+        if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
+        setIsAdding(false); setShowSettings(false); setSearchQuery(''); setNewPassword(''); setSavingKeyword(null); keywordLock.current = false;
+        setInputMode('word'); setSentenceDraft(null); setAiLoading(false); setSentenceAiLoading(false);
+        setNewWord({ word: '', meaning: '', language: 'en', example: '', exampleCn: '', category: '', etymology: '' });
+        setShowSentence(false); setSentenceData(null); setShowExpansion(false); setExpansionData(null);
+        setSentenceLoading(false); setExpansionLoading(false); dismissUndo();
+    }, [user?.id, dismissUndo]);
+    useEffect(() => { generationSeq.current++; setSentenceLoading(false); setExpansionLoading(false); }, [activeTab]);
 
     useEffect(() => {
         if (!loading) {
@@ -250,17 +269,19 @@ function App() {
 
     const handleRegenerate = useCallback(async (wordId: string) => {
         const word = words.find(w => w.id === wordId);
-        if (!word || !apiKey) return;
+        if (!word || regeneratingId) return;
+        if (!apiKey) { setShowSettings(true); showToast('info', '配置网页 AI 后即可生成例句。'); return; }
         setRegeneratingId(wordId);
         const newEx = await regenerateExample(word.word, word.meaning, word.language, apiKey);
         if (newEx) {
             await updateWordExample(wordId, newEx.example, newEx.exampleCn);
         }
         setRegeneratingId(null);
-    }, [words, apiKey, updateWordExample]);
+    }, [words, apiKey, updateWordExample, regeneratingId, showToast]);
 
     // 重置并关闭添加表单（单词/句子两种模式共用）
     const resetAddForm = useCallback(() => {
+        aiSeqRef.current++;
         if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
         setIsAdding(false);
         setInputMode('word');
@@ -275,6 +296,9 @@ function App() {
     }, []);
 
     const handleStartAdd = async () => {
+        const seq = ++aiSeqRef.current;
+        const language = activeTab === 'en' || activeTab === 'de' ? activeTab : newWord.language;
+        setNewWord(prev => ({ ...prev, language }));
         setIsAdding(true);
         const text = searchQuery.trim();
         if (!text) return;
@@ -291,7 +315,7 @@ function App() {
 
         if (guessed === 'sentence') {
             // 临时占位：先把原句显示出来，翻译/重点词随后由 AI 回填
-            setSentenceDraft({ language: newWord.language, sentence: text, translation: '', keywords: [], grammar: [] });
+            setSentenceDraft({ language, sentence: text, translation: '', keywords: [], grammar: [] });
             setSentenceNeedsConnection(false);
         } else {
             setSentenceDraft(null);
@@ -303,7 +327,6 @@ function App() {
             return;
         }
 
-        const seq = ++aiSeqRef.current;
         if (guessed === 'sentence') setSentenceAiLoading(true); else setAiLoading(true);
 
         const result = await detectAndAnalyze(
@@ -353,8 +376,10 @@ function App() {
     };
 
     // 手动切换单词/句子模式：用当前文本重跑对应 AI 调用
-    const handleSwitchInputMode = async (mode: 'word' | 'sentence') => {
-        if (mode === inputMode) return;
+    const handleSwitchInputMode = async (mode: 'word' | 'sentence', force = false) => {
+        if (mode === inputMode && !force) return;
+        const seq = ++aiSeqRef.current;
+        setAiLoading(false); setSentenceAiLoading(false);
         if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
         setInputMode(mode);
         const text = newWord.word.trim();
@@ -364,7 +389,6 @@ function App() {
             setSentenceNeedsConnection(false);
             setSentenceAiLoading(false);
             if (!text || !apiKey) return;
-            const seq = ++aiSeqRef.current;
             setAiLoading(true);
             const content = await getAIContent(
                 text,
@@ -392,7 +416,6 @@ function App() {
             setSentenceDraft({ language: newWord.language, sentence: newWord.word, translation: '', keywords: [], grammar: [] });
             if (!text) return;
             if (!apiKey) { setSentenceNeedsConnection(true); return; }
-            const seq = ++aiSeqRef.current;
             setSentenceAiLoading(true);
             const result = await detectAndAnalyze(
                 text,
@@ -422,6 +445,18 @@ function App() {
         }
     };
 
+    // 修改原文即使旧分析失效，保存与朗读始终使用当前可见的原句。
+    const handleInputTextChange = useCallback((text: string) => {
+        aiSeqRef.current++;
+        if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
+        setAiLoading(false); setSentenceAiLoading(false);
+        setNewWord(previous => ({ ...previous, word: text, meaning: '', example: '', exampleCn: '', category: '', etymology: '' }));
+        if (inputModeRef.current === 'sentence') {
+            setSentenceDraft(previous => ({ language: previous?.language || newWordRef.current.language, sentence: text, translation: '', keywords: [], grammar: [] }));
+            setSentenceNeedsConnection(true);
+        }
+    }, []);
+
     // 句子翻译可编辑
     const handleSentenceTranslationChange = useCallback((value: string) => {
         setSentenceDraft(prev => (prev ? { ...prev, translation: value } : prev));
@@ -432,20 +467,18 @@ function App() {
         const draft = sentenceDraft;
         if (!draft) return false;
         const target = word.trim().toLowerCase();
-        return words.some(w => w.word.toLowerCase() === target && w.language === draft.language);
-    }, [words, sentenceDraft]);
+        return words.some(w => w.word.toLowerCase() === target && w.language === draft.language && !pendingWordIds.has(w.id));
+    }, [words, sentenceDraft, pendingWordIds]);
 
     // 把重点词加入生词本
     const handleAddKeyword = useCallback(async (kw: SentenceKeyword) => {
         const draft = sentenceDraft;
-        if (!draft) return;
+        if (!draft || keywordLock.current) return;
         const trimmed = kw.word.trim();
-        const isDuplicate = words.some(w => w.word.toLowerCase() === trimmed.toLowerCase() && w.language === draft.language);
-        if (isDuplicate) {
-            showToast('info', '已在生词本');
-            return;
-        }
-        await addWord({
+        const owner = accountRef.current;
+        keywordLock.current = true; setSavingKeyword(trimmed);
+        try {
+        const saved = await addWord({
             word: trimmed, // 保留词典原型大小写（德语名词首字母大写不被归一）
             meaning: kw.meaning,
             language: draft.language,
@@ -454,8 +487,9 @@ function App() {
             category: draft.register || 'daily',
             etymology: '',
             date: new Date().toLocaleDateString('sv-SE')
-        });
-        showToast('success', '已加入生词本');
+        }, { silent: true });
+        if (saved && accountRef.current === owner) showToast('success', '已加入生词本');
+        } finally { if (accountRef.current === owner) { keywordLock.current = false; setSavingKeyword(null); } }
     }, [sentenceDraft, words, addWord, showToast]);
 
     // 句子卡片的 draft：sentenceDraft 为空时回退到基于当前输入的占位对象。
@@ -478,6 +512,7 @@ function App() {
         if (!draft) return;
         const translation = draft.translation.trim();
         if (!draft.sentence.trim() || !translation) return;
+        const sequence = aiSeqRef.current;
         const ok = await saveSentence({
             sentence: draft.sentence,              // 绝不 toLowerCase，原样保留大小写
             sentenceCn: translation,
@@ -490,7 +525,7 @@ function App() {
         }, '已保存到收藏');
         // 仅在保存成功时关闭表单并清空草稿；失败时保留用户手填/AI 生成的整句，供直接重试，不丢草稿
         // （resetAddForm 内已清空搜索框，覆盖成功路径）
-        if (ok) {
+        if (ok && sequence === aiSeqRef.current) {
             resetAddForm();
             setActiveTab('saved'); // 保存成功后跳到「收藏」，直接看到刚存的句子，而非停在原词表 tab
         }
@@ -500,14 +535,8 @@ function App() {
         if (!newWord.word.trim() || !newWord.meaning.trim()) return;
 
         const trimmedWord = newWord.word.trim();
-        // 去重：比较时统一小写归一（英德一致），命中则提示并保持表单打开、不写入
-        const isDuplicate = words.some(w => w.word.toLowerCase() === trimmedWord.toLowerCase() && w.language === newWord.language);
-        if (isDuplicate) {
-            showToast('info', '该单词已存在');
-            return;
-        }
-
-        await addWord({
+        const sequence = aiSeqRef.current;
+        const saved = await addWord({
             word: trimmedWord, // 保留原大小写（德语名词 Haus 不再被小写化）
             meaning: newWord.meaning.trim(),
             language: newWord.language,
@@ -518,23 +547,21 @@ function App() {
             date: new Date().toLocaleDateString('sv-SE')
         });
 
-        resetAddForm(); // 内含清空搜索框
+        if (saved && sequence === aiSeqRef.current) resetAddForm();
     };
 
     const handleDeleteWord = useCallback(async (id: string) => {
         const deleted = await deleteWord(id);
         if (deleted) {
-            // 删词联动：清本地复习状态（fire-and-forget；服务端靠 FK CASCADE）。
-            // 撤销时该词由 useReview 的回填对账重新补建状态（可接受的轻微 SRS 漂移）。
-            removeReviewState(id);
+            // 待确认删除仍可撤销；复习记录由队列在云端确认删除后统一处理。
             markDeleted({
                 id: deleted.id,
                 type: 'word',
                 label: deleted.word,
-                restore: async () => { await restoreWord(deleted); }
+                restore: () => restoreWord(deleted)
             });
         }
-    }, [deleteWord, markDeleted, restoreWord, removeReviewState]);
+    }, [deleteWord, markDeleted, restoreWord]);
 
     const handleDeleteSentence = useCallback(async (id: string) => {
         const deleted = await unsaveSentence(id);
@@ -543,7 +570,7 @@ function App() {
                 id: deleted.id,
                 type: 'sentence',
                 label: deleted.sentence,
-                restore: async () => { await restoreSentence(deleted); }
+                restore: () => restoreSentence(deleted)
             });
         }
     }, [unsaveSentence, markDeleted, restoreSentence]);
@@ -626,6 +653,8 @@ function App() {
         const langWords = words.filter(w => w.language === activeTab);
         if (langWords.length < 2) return;
 
+        const seq = ++generationSeq.current;
+        const owner = user?.id;
         setSentenceLoading(true);
         setShowSentence(true);
 
@@ -638,6 +667,7 @@ function App() {
         const selectedWords = shuffled.slice(0, count);
 
         const result = await generateCombinedSentence(selectedWords, activeTab, apiKey);
+        if (seq !== generationSeq.current || accountRef.current !== owner) return;
 
         if (result) {
             setSentenceData({
@@ -661,6 +691,8 @@ function App() {
         const langWords = words.filter(w => w.language === activeTab);
         if (langWords.length < 1) return;
 
+        const seq = ++generationSeq.current;
+        const owner = user?.id;
         setExpansionLoading(true);
         setShowExpansion(true);
         setShowSentence(false);
@@ -670,6 +702,7 @@ function App() {
         const sourceWord = word || langWords[Math.floor(Math.random() * langWords.length)];
 
         const result = await generateVocabularyExpansion(sourceWord, apiKey);
+        if (seq !== generationSeq.current || accountRef.current !== owner) return;
 
         if (result) {
             setExpansionData({
@@ -697,38 +730,17 @@ function App() {
             return;
         }
 
-        // Filter out words that already exist
-        const newWordsToAdd: Omit<Word, 'id' | 'timestamp'>[] = [];
-        const skippedWords: string[] = [];
-
-        for (const item of selectedItems) {
-            const exists = words.some(w => w.word.toLowerCase() === item.word.toLowerCase() && w.language === activeTab);
-            if (exists) {
-                skippedWords.push(item.word);
-            } else {
-                newWordsToAdd.push({
-                    word: item.word.trim(), // 保留原大小写（去重比较处已小写归一）
-                    meaning: item.meaning,
-                    language: activeTab as 'en' | 'de',
-                    example: item.sentence,
-                    exampleCn: item.sentenceCn,
-                    category: sanitizeCategory(expansionData.sourceWord.category) || 'daily',
-                    etymology: `通过"${expansionData.sourceWord.word}"扩展学习 (${item.relationType})`,
-                    date: new Date().toLocaleDateString('sv-SE')
-                });
-            }
-        }
-
-        // Batch add all new words with a single state update
-        if (newWordsToAdd.length > 0) {
-            await addWords(newWordsToAdd);
-            showToast('success', `已添加 ${newWordsToAdd.length} 个新词`);
-        }
-
-        // Show info about skipped words (if any and some were added)
-        if (skippedWords.length > 0 && newWordsToAdd.length === 0) {
-            showToast('info', `所选词汇均已在词汇本中`);
-        }
+        // 由写入层处理已存在与待确认的词，失败后再次提交复用同一请求。
+        const selectedWords: Omit<Word, 'id' | 'timestamp'>[] = selectedItems.map(item => ({
+            word: item.word.trim(), meaning: item.meaning, language: expansionData.sourceWord.language,
+            example: item.sentence, exampleCn: item.sentenceCn,
+            category: sanitizeCategory(expansionData.sourceWord.category) || 'daily',
+            etymology: `通过"${expansionData.sourceWord.word}"扩展学习 (${item.relationType})`,
+            date: new Date().toLocaleDateString('sv-SE')
+        }));
+        const saved = await addWords(selectedWords);
+        if (!saved) return;
+        showToast('success', '已保存所选词汇');
 
         setShowExpansion(false);
         setExpansionData(null);
@@ -779,15 +791,15 @@ function App() {
 
             {/* Pending Sync Indicator (when online but has pending) */}
             {isOnline && !networkSyncing && pendingCount > 0 && (
-                <div className="fixed top-0 left-0 right-0 bg-green-500 text-white text-center py-2 text-sm font-medium z-50 flex items-center justify-center gap-2">
-                    <span>✓</span>
-                    <span>已恢复在线</span>
+                <div role="status" aria-label="同步状态" className={`fixed top-0 left-0 right-0 text-white text-center px-3 py-2 text-sm font-medium z-50 flex flex-wrap items-center justify-center gap-2 ${failedCount > 0 ? 'bg-amber-700 dark:bg-amber-800' : 'bg-slate-700 dark:bg-slate-800'}`}>
+                    <span>{failedCount > 0 ? `${failedCount} 项需要处理` : `${pendingCount} 项待同步`}</span>
                     <button
-                        onClick={syncNow}
-                        className="bg-white/20 hover:bg-white/30 px-3 py-0.5 rounded-full text-xs transition-colors"
+                        onClick={() => void syncNow({ retryFailed: failedCount > 0 })}
+                        className="bg-white/15 hover:bg-white/25 px-3 py-1 rounded-full text-xs transition-colors"
                     >
-                        同步 {pendingCount} 项
+                        {failedCount > 0 ? '重试同步' : '立即同步'}
                     </button>
+                    {failedCount > 0 && <button type="button" aria-label="打开同步设置" onClick={() => setShowSettings(true)} className="px-2 py-1 text-xs underline underline-offset-2">设置</button>}
                 </div>
             )}
 
@@ -816,10 +828,10 @@ function App() {
                     </div>
                 </div>
                 <div className="flex gap-2">
-                    <button className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 rounded-lg active:scale-90 transition-all" onClick={toggleTheme}>
+                    <button aria-label={theme === 'dark' ? '切换浅色模式' : '切换深色模式'} className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 rounded-lg active:scale-90 transition-all" onClick={toggleTheme}>
                         {theme === 'dark' ? <Icons.Sun /> : <Icons.Moon />}
                     </button>
-                    <button aria-label="设置" className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 rounded-lg active:scale-90 transition-all" onClick={() => setShowSettings(!showSettings)}><Icons.Settings /></button>
+                    <button aria-label="设置" aria-haspopup="dialog" aria-expanded={showSettings} className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 rounded-lg active:scale-90 transition-all" onClick={() => setShowSettings(!showSettings)}><Icons.Settings /></button>
                     {words.length > 0 && (
                         <button className="flex items-center gap-2 px-3 py-2 text-sm text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg active:scale-95 transition-all" onClick={exportWords}><Icons.Download /> 导出</button>
                     )}
@@ -829,14 +841,14 @@ function App() {
 
             {/* Password Update Modal */}
             {showPasswordUpdate && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-xl w-full max-w-sm">
-                        <h3 className="text-lg font-bold mb-4 text-slate-800 dark:text-slate-100">设置新密码</h3>
+                <SettingsDialog title="设置新密码" onClose={() => { if (!passwordSaving) { setShowPasswordUpdate(false); setNewPassword(''); } }}>
+                    <div className="space-y-3">
                         <p className="text-sm text-slate-500 mb-4">请输入您的新密码。</p>
                         <form onSubmit={async (e) => {
                             e.preventDefault();
-                            if (newPassword.length < 6) return;
-                            const { supabase } = await import('./supabaseClient');
+                            if (newPassword.length < 6 || passwordSaving) return;
+                            setPasswordSaving(true);
+                            try {
                             const { error } = await supabase.auth.updateUser({ password: newPassword });
                             if (!error) {
                                 setShowPasswordUpdate(false);
@@ -845,9 +857,13 @@ function App() {
                             } else {
                                 showToast('error', '修改失败：' + error.message);
                             }
+                            } catch { showToast('error', '密码修改没有完成，请重试。'); }
+                            finally { setPasswordSaving(false); }
                         }}>
                             <input
                                 className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-slate-400 dark:focus:border-slate-500 mb-4 text-slate-800 dark:text-slate-100"
+                                aria-label="新密码"
+                                disabled={passwordSaving}
                                 type="password"
                                 placeholder="新密码 (至少6位)"
                                 value={newPassword}
@@ -859,51 +875,28 @@ function App() {
                             <div className="flex gap-2">
                                 <button
                                     type="button"
-                                    onClick={() => setShowPasswordUpdate(false)}
+                                    disabled={passwordSaving}
+                                    onClick={() => { setShowPasswordUpdate(false); setNewPassword(''); }}
                                     className="flex-1 px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700"
                                 >
                                     取消
                                 </button>
                                 <button
                                     type="submit"
+                                    disabled={passwordSaving}
                                     className="flex-1 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium"
                                 >
-                                    确认修改
+                                    {passwordSaving ? '修改中…' : '确认修改'}
                                 </button>
                             </div>
                         </form>
                     </div>
-                </div>
+                </SettingsDialog>
             )}
 
-            {/* API Key Warning */}
-            {!apiKey && (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
-                    <div className="flex items-center gap-2 mb-2">
-                        <span className="text-xl">⚠️</span>
-                        <h3 className="text-sm font-semibold text-red-600 m-0">网页 AI 功能尚未配置</h3>
-                    </div>
-                    <p className="text-xs text-red-700 mb-3 leading-relaxed">
-                        网页中的自动翻译、例句生成和朗读需要 OpenAI API Key。Codex 复习可以直接使用已有词汇。
-                        <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline ml-1">
-                            获取 API Key →
-                        </a>
-                    </p>
-                    <input
-                        className="w-full px-3 py-2 bg-white border border-red-200 rounded-lg text-sm outline-none focus:border-red-400 text-slate-800"
-                        type="password"
-                        placeholder="sk-proj-xxxxx"
-                        value={apiKey}
-                        onChange={(e) => setApiKey(e.target.value)}
-                        autoComplete="off"
-                    />
-                </div>
-            )}
-
-            {/* Settings Panel */}
-            {showSettings && user && (
-                <SettingsPanel apiKey={apiKey} setApiKey={setApiKey} userEmail={user.email} userId={user.id} />
-            )}
+            {showSettings && user && <SettingsDialog onClose={() => setShowSettings(false)}>
+                <SettingsPanel key={user.id} apiKey={apiKey} setApiKey={setApiKey} userEmail={user.email} userId={user.id} onSyncRequested={async () => { await refreshPendingCount(); await syncNow(); await Promise.allSettled([refreshFromServer(), refreshSentencesFromServer(), refreshReviewFromServer()]); }} />
+            </SettingsDialog>}
 
             {/* Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
@@ -933,7 +926,7 @@ function App() {
                     onClick={() => { setTodayFilter(!todayFilter); setActiveTab('all'); setShowSentence(false); setSentenceData(null); setShowExpansion(false); setExpansionData(null); }}
                 >
                     <div className="text-2xl font-bold text-amber-600">{allStats.today}</div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">今日</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">今日新增</div>
                 </button>
             </div>
 
@@ -943,7 +936,8 @@ function App() {
                     <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></div>
                     <input
                         className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-slate-400 dark:focus:border-slate-500 text-slate-800 dark:text-slate-100 transition-colors"
-                        placeholder={activeTab === 'saved' ? '搜索句子…' : '搜索或输入句子…'}
+                        placeholder={activeTab === 'saved' ? '搜索句子…' : activeTab === 'review' ? '输入新词或句子…' : '搜索或输入句子…'}
+                        aria-label={activeTab === 'saved' ? '搜索收藏句子' : '搜索词汇或输入新内容'}
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
                     />
@@ -994,6 +988,7 @@ function App() {
             {/* Sentence Generation & Vocabulary Expansion Panel */}
             {(activeTab === 'en' || activeTab === 'de') && allStats[activeTab] >= 1 && (
                 <div className="mb-6">
+                    {!apiKey && <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">组合造句和词汇拓展可在<button type="button" className="underline ml-1" onClick={() => setShowSettings(true)}>设置中启用网页 AI</button>。</p>}
                     {!showSentence && !showExpansion ? (
                         <div className="flex gap-2">
                             {/* Combined Sentence Button - requires 2+ words */}
@@ -1161,6 +1156,8 @@ function App() {
                                                     <div className="flex items-center gap-2">
                                                         <input
                                                             type="checkbox"
+                                                            aria-label={`选择 ${item.word}`}
+                                                            onClick={event => event.stopPropagation()}
                                                             checked={item.selected}
                                                             onChange={() => toggleWordSelection(index)}
                                                             className="w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
@@ -1224,21 +1221,24 @@ function App() {
                     <div className="flex flex-wrap gap-2 mb-4">
                         {/* 语言开关 */}
                         <div className="flex gap-2 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-lg w-fit">
-                            <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${newWord.language === 'en' ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`} onClick={() => { setInputMode('word'); setSentenceDraft(null); setSentenceNeedsConnection(false); setNewWord(p => ({ ...p, language: 'en', word: '', meaning: '', example: '', exampleCn: '', category: '', etymology: '' })); }}>🇬🇧 英语</button>
-                            <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${newWord.language === 'de' ? 'bg-white dark:bg-slate-600 text-green-600 dark:text-green-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`} onClick={() => { setInputMode('word'); setSentenceDraft(null); setSentenceNeedsConnection(false); setNewWord(p => ({ ...p, language: 'de', word: '', meaning: '', example: '', exampleCn: '', category: '', etymology: '' })); }}>🇩🇪 德语</button>
+                            <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${newWord.language === 'en' ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`} disabled={syncing || savingId !== null} onClick={() => { setInputMode('word'); setSentenceDraft(null); setSentenceNeedsConnection(false); setNewWord(p => ({ ...p, language: 'en', word: '', meaning: '', example: '', exampleCn: '', category: '', etymology: '' })); }}>🇬🇧 英语</button>
+                            <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${newWord.language === 'de' ? 'bg-white dark:bg-slate-600 text-green-600 dark:text-green-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`} disabled={syncing || savingId !== null} onClick={() => { setInputMode('word'); setSentenceDraft(null); setSentenceNeedsConnection(false); setNewWord(p => ({ ...p, language: 'de', word: '', meaning: '', example: '', exampleCn: '', category: '', etymology: '' })); }}>🇩🇪 德语</button>
                         </div>
                         {/* 单词 / 句子 分段开关 */}
                         <div className="flex gap-2 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-lg w-fit">
-                            <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${inputMode === 'word' ? 'bg-white dark:bg-slate-600 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`} onClick={() => handleSwitchInputMode('word')}>单词</button>
-                            <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${inputMode === 'sentence' ? 'bg-white dark:bg-slate-600 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`} onClick={() => handleSwitchInputMode('sentence')}>句子</button>
+                            <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${inputMode === 'word' ? 'bg-white dark:bg-slate-600 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`} disabled={syncing || savingId !== null} onClick={() => handleSwitchInputMode('word')}>单词</button>
+                            <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${inputMode === 'sentence' ? 'bg-white dark:bg-slate-600 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`} disabled={syncing || savingId !== null} onClick={() => handleSwitchInputMode('sentence')}>句子</button>
                         </div>
                     </div>
+                    {!apiKey && <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">可手动填写；自动解析可在<button type="button" className="underline ml-1" onClick={() => setShowSettings(true)}>设置中启用</button>。</p>}
                     <input
+                        aria-label="单词、短语或句子原文"
                         ref={inputRef}
+                        disabled={syncing || savingId !== null}
                         className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-slate-400 dark:focus:border-slate-500 mb-2 text-slate-800 dark:text-slate-100 font-medium"
                         placeholder="输入单词、短语或句子"
                         value={newWord.word}
-                        onChange={e => setNewWord(p => ({ ...p, word: e.target.value }))}
+                        onChange={e => handleInputTextChange(e.target.value)}
                     />
                     {inputMode === 'sentence' ? (
                         <SentenceCard
@@ -1247,7 +1247,9 @@ function App() {
                             needsConnection={sentenceNeedsConnection}
                             speaking={speakingId === 'input-sentence'}
                             cached={cachedKeys.has(generateCacheKey(sentenceDraft?.language ?? newWord.language, sentenceDraft?.sentence ?? newWord.word))}
-                            saving={savingId === (sentenceDraft?.sentence ?? '')}
+                            saving={savingId !== null}
+                            savingKeyword={savingKeyword}
+                            onAnalyze={apiKey && isOnline ? () => void handleSwitchInputMode('sentence', true) : undefined}
                             onSpeak={handleSpeakSentenceInput}
                             onTranslationChange={handleSentenceTranslationChange}
                             onAddKeyword={handleAddKeyword}
@@ -1266,6 +1268,8 @@ function App() {
                                 <>
                                     <div className="relative mb-2">
                                         <input
+                                            aria-label="中文翻译"
+                                            disabled={syncing}
                                             className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-slate-400 dark:focus:border-slate-500 text-slate-800 dark:text-slate-100"
                                             placeholder="中文翻译"
                                             value={newWord.meaning}
@@ -1285,7 +1289,7 @@ function App() {
                                 <button className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200 active:scale-95 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed" onClick={handleAddWord} disabled={!newWord.word.trim() || !newWord.meaning.trim() || aiLoading || syncing}>
                                     {syncing ? '保存中...' : '保存'}
                                 </button>
-                                <button className="px-4 py-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors font-medium" onClick={resetAddForm}>取消</button>
+                                <button className="px-4 py-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors font-medium" disabled={syncing} onClick={resetAddForm}>取消</button>
                             </div>
                         </>
                     )}
@@ -1420,7 +1424,7 @@ function App() {
             <div className="mt-8 text-center text-xs text-slate-400 flex items-center justify-center gap-1 pb-8">
                 {isOnline ? (
                     <>
-                        <Icons.Cloud /> 数据已同步到云端 · 点击单词听发音
+                        <Icons.Cloud /> {pendingCount > 0 ? '有待同步内容' : '云端生词本'} · 点击单词听发音
                     </>
                 ) : (
                     <>

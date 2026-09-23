@@ -23,7 +23,7 @@ interface ReviewSessionProps {
     startAheadSession: () => void;
     nextRound: () => void;
     endSession: () => void;
-    gradeWord: (wordId: string, grade: ReviewGrade) => Promise<void>;
+    gradeWord: (wordId: string, grade: ReviewGrade) => Promise<boolean>;
     previewFor: (wordId: string) => { forgot: number; fuzzy: number; known: number } | null;
     // TTS 三件套
     speakingId: string | null;
@@ -83,8 +83,8 @@ function ReviewSession({
         localStorage.setItem(STORAGE_KEYS.REVIEW_MODE, m);
     }, []);
 
-    const handleGrade = useCallback((grade: ReviewGrade) => {
-        if (currentCard) gradeWord(currentCard.id, grade);
+    const handleGrade = useCallback(async (grade: ReviewGrade): Promise<boolean> => {
+        return currentCard ? gradeWord(currentCard.id, grade) : false;
     }, [currentCard, gradeWord]);
 
     // 首次加载（通常瞬时）：轻量骨架

@@ -146,6 +146,7 @@ export interface SentenceInput {
 }
 
 export interface SettingsPanelProps {
+    onSyncRequested?: () => Promise<void>;
     userId: string;
     apiKey: string;
     setApiKey: (key: string) => void;
@@ -175,7 +176,7 @@ export interface ReviewCardProps {
     mode: 'flip' | 'cloze';                                        // 用户选择的复习模式
     // 该词三键的「下次间隔」天数预览（来自 useReview.previewFor）；无状态时为 null
     preview: { forgot: number; fuzzy: number; known: number } | null;
-    onGrade: (grade: 'forgot' | 'fuzzy' | 'known') => void;        // 评级回调（推进 session）
+    onGrade: (grade: 'forgot' | 'fuzzy' | 'known') => Promise<boolean>;        // 评级回调（推进 session）
     // TTS 三件套（复用现有管线与状态感知 SpeakerIcon）
     speakingId: string | null;
     setSpeakingId: (id: string | null) => void;

@@ -63,6 +63,8 @@ function AuthForm({ onAuth }: AuthFormProps) {
                 <form onSubmit={handleSubmit}>
                     <input
                         className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-slate-400 dark:focus:border-slate-500 mb-2 text-slate-800 dark:text-slate-100"
+                        aria-label="邮箱"
+                        disabled={loading}
                         type="email"
                         placeholder="邮箱"
                         value={email}
@@ -73,24 +75,26 @@ function AuthForm({ onAuth }: AuthFormProps) {
                     {view !== 'forgot' && (
                         <input
                             className="w-full px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:border-slate-400 dark:focus:border-slate-500 mb-2 text-slate-800 dark:text-slate-100"
+                            aria-label="密码"
+                            disabled={loading}
                             type="password"
                             placeholder="密码"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             required
                             minLength={6}
-                            autoComplete="current-password"
+                            autoComplete={view === 'signup' ? 'new-password' : 'current-password'}
                         />
                     )}
 
                     {error && (
-                        <div className="text-xs text-red-500 mb-2">
+                        <div role="alert" className="text-xs text-red-500 mb-2">
                             {error}
                         </div>
                     )}
 
                     {message && (
-                        <div className="text-xs text-emerald-600 mb-2">
+                        <div role="status" className="text-xs text-emerald-600 mb-2">
                             {message}
                         </div>
                     )}
@@ -106,6 +110,7 @@ function AuthForm({ onAuth }: AuthFormProps) {
                     {view === 'login' && (
                         <>
                             <button
+                                disabled={loading}
                                 onClick={() => { setView('forgot'); setError(''); setMessage(''); }}
                                 className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
                             >
@@ -114,7 +119,8 @@ function AuthForm({ onAuth }: AuthFormProps) {
                             <div>
                                 <span className="text-slate-500 dark:text-slate-400">没有账户？</span>
                                 <button
-                                    onClick={() => { setView('signup'); setError(''); setMessage(''); }}
+                                    disabled={loading}
+                                onClick={() => { setView('signup'); setError(''); setMessage(''); }}
                                     className="bg-transparent border-none text-blue-600 hover:text-blue-700 font-medium cursor-pointer ml-1"
                                 >
                                     注册
@@ -126,6 +132,7 @@ function AuthForm({ onAuth }: AuthFormProps) {
                         <div>
                             <span className="text-slate-500 dark:text-slate-400">已有账户？</span>
                             <button
+                                disabled={loading}
                                 onClick={() => { setView('login'); setError(''); setMessage(''); }}
                                 className="bg-transparent border-none text-blue-600 hover:text-blue-700 font-medium cursor-pointer ml-1"
                             >

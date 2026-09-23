@@ -136,3 +136,22 @@
 .review-flip-back {
     transform: rotateY(180deg);
 }
+
+/* 键盘焦点在浅色和深色背景上都保持可见。 */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+summary:focus-visible {
+    outline: 2px solid #f59e0b;
+    outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+        scroll-behavior: auto !important;
+    }
+}

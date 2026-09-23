@@ -1,4 +1,4 @@
-import { useState, useRef, memo } from 'react';
+import { useState, useRef, useEffect, memo } from 'react';
 import { Icons } from './Icons';
 import type { SwipeableCardProps } from '../types';
 
@@ -6,14 +6,18 @@ import type { SwipeableCardProps } from '../types';
 function SwipeableCard({ children, onDelete, className }: SwipeableCardProps) {
     const [offset, setOffset] = useState(0);
     const [swiping, setSwiping] = useState(false);
-    const [hovering, setHovering] = useState(false);
     const [swipeDirection, setSwipeDirection] = useState<'horizontal' | 'vertical' | null>(null);
+    const deleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => () => { if (deleteTimer.current) clearTimeout(deleteTimer.current); }, []);
+    const touchActive = useRef(false);
     const startX = useRef(0);
     const startY = useRef(0);
     const currentX = useRef(0);
     const currentY = useRef(0);
 
     const handleTouchStart = (e: React.TouchEvent) => {
+        if ((e.target as HTMLElement).closest('button, input, textarea, select, a')) { touchActive.current = false; return; }
+        touchActive.current = true;
         startX.current = e.touches[0].clientX;
         startY.current = e.touches[0].clientY;
         currentX.current = startX.current;
@@ -48,12 +52,14 @@ function SwipeableCard({ children, onDelete, className }: SwipeableCardProps) {
     };
 
     const handleTouchEnd = () => {
+        if (!touchActive.current) return;
+        touchActive.current = false;
         setSwiping(false);
         setSwipeDirection(null);
 
         if (offset < -60) {
             setOffset(-100);
-            setTimeout(() => onDelete(), 200);
+            deleteTimer.current = setTimeout(() => { void Promise.resolve(onDelete()).catch(() => {}).finally(() => setOffset(0)); }, 200);
         } else {
             setOffset(0);
         }
@@ -62,8 +68,6 @@ function SwipeableCard({ children, onDelete, className }: SwipeableCardProps) {
     return (
         <div
             className="relative overflow-hidden rounded-xl w-full"
-            onMouseEnter={() => setHovering(true)}
-            onMouseLeave={() => setHovering(false)}
         >
             {/* Swipe delete background (mobile) */}
             <div
@@ -82,16 +86,18 @@ function SwipeableCard({ children, onDelete, className }: SwipeableCardProps) {
                 onTouchStart={handleTouchStart}
                 onTouchMove={handleTouchMove}
                 onTouchEnd={handleTouchEnd}
+                onTouchCancel={() => { touchActive.current = false; setOffset(0); setSwiping(false); setSwipeDirection(null); }}
             >
                 <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                         {children}
                     </div>
                     {/* Desktop delete button (hover devices only) */}
                     <button
-                        className={`p-2.5 rounded-lg text-slate-300 dark:text-slate-600 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 active:scale-90 transition-all hover-device-show ${hovering ? 'opacity-100' : 'opacity-0'}`}
+                        className={`p-2.5 rounded-lg text-slate-300 dark:text-slate-600 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 active:scale-90 transition-all shrink-0 focus-visible:ring-2 focus-visible:ring-red-400`}
                         onClick={(e) => { e.stopPropagation(); onDelete(); }}
                         title="删除单词"
+                        aria-label="删除单词"
                     >
                         <Icons.Trash />
                     </button>
