@@ -1,11 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getServiceClient } from './client.js';
 import { authenticate, newToken, requireScope, requireSession, TOKEN_COLUMNS, type Identity } from './auth.js';
-import { ApiError, DEFAULT_PREFERENCES, SCOPES, choice, integer, invalid, jsonBody, keys, str, strings, timezone, uuid, validateEvent } from './validation.js';
+import { ApiError, DEFAULT_PREFERENCES, calendarDate, choice, integer, invalid, jsonBody, keys, str, strings, timezone, tokenScopes, uuid, validateEvent } from './validation.js';
 
 const WORD_COLUMNS = 'id,word,meaning,language,example,example_cn,category,date,created_at,etymology';
 const SENTENCE_COLUMNS = 'id,sentence,sentence_cn,language,scene,source_type,source_words,keywords,grammar,created_at';
-const SESSION_COLUMNS = 'id,language,mode,topic,word_ids,target_minutes,status,summary,version,created_at,updated_at,completed_at';
+const SESSION_COLUMNS = 'id,language,mode,topic,word_ids,sentence_ids,target_minutes,status,summary,version,created_at,updated_at,completed_at';
 const EVENT_COLUMNS = 'id,word_id,session_id,grade,source,practiced_at,timezone,answer,feedback,error_tags,hint_count,scheduling_applied,state_after,word_snapshot,created_at';
 
 function dbError(error: { code?: string } | null) {
@@ -33,7 +33,7 @@ export async function route(request: Request, db: SupabaseClient, identity: Iden
     const path = url.pathname.replace(/^\/api\/v1\/?/, '').replace(/\/$/, '');
     const method = request.method.toUpperCase();
     const params = url.searchParams;
-    const limit = integer(params.get('limit'), 'limit', 1, 100, 20);
+    const limit = integer(params.get('limit'), 'limit', 1, 100, path === 'practice-materials' ? 10 : 20);
     const offset = integer(params.get('offset'), 'offset', 0, 100_000, 0);
     const userId = identity.userId;
     const read = () => requireScope(identity, 'vocabulary:read');
@@ -48,11 +48,19 @@ export async function route(request: Request, db: SupabaseClient, identity: Iden
         }
         if (path === 'tokens' && method === 'POST') {
             const body = await jsonBody(request); keys(body, ['name', 'scopes', 'expires_in_days']);
-            const scopes = [...new Set(strings(body.scopes, 'scopes', 3))];
-            if (!scopes.includes('vocabulary:read') || scopes.some(s => !(SCOPES as readonly string[]).includes(s))) invalid('连接必须包含读词权限，且只能选择支持的权限');
+            const scopes = tokenScopes(body.scopes);
             const token = newToken();
             const { data, error } = await db.from('api_access_tokens').insert({ id: token.id, user_id: userId, name: str(body.name, 'name', 80), prefix: token.prefix, token_hash: token.hash, scopes, expires_at: new Date(Date.now() + integer(body.expires_in_days, 'expires_in_days', 1, 365, 90) * 86400_000).toISOString() }).select(TOKEN_COLUMNS).single();
             dbError(error); return result({ token: data, access_token: token.raw }, undefined, 201);
+        }
+        if (/^tokens\/[^/]+$/.test(path) && method === 'PATCH') {
+            const body = await jsonBody(request); keys(body, ['scopes']);
+            const scopes = tokenScopes(body.scopes);
+            const { data, error } = await db.from('api_access_tokens').update({ scopes })
+                .eq('id', uuid(path.split('/')[1])).eq('user_id', userId)
+                .is('revoked_at', null).gt('expires_at', new Date().toISOString()).select(TOKEN_COLUMNS).maybeSingle();
+            dbError(error); if (!data) throw new ApiError(404, 'not_found', '连接不存在、已撤销或已过期');
+            return result(data);
         }
         if (/^tokens\/[^/]+$/.test(path) && method === 'DELETE') {
             const { data, error } = await db.from('api_access_tokens').update({ revoked_at: new Date().toISOString() }).eq('id', uuid(path.split('/')[1])).eq('user_id', userId).select('id').maybeSingle();
@@ -68,6 +76,29 @@ export async function route(request: Request, db: SupabaseClient, identity: Iden
         for (const name of ['since', 'until']) if (params.has(name)) { const date = str(params.get(name), name, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) invalid('日期必须为 YYYY-MM-DD'); query = name === 'since' ? query.gte('date', date) : query.lte('date', date); }
         const { data, error } = await query.order('created_at', { ascending: false }).order('id').range(offset, offset + limit);
         dbError(error); return page(data || [], limit, offset);
+    }
+    if (path === 'words' && method === 'POST') {
+        requireScope(identity, 'vocabulary:write'); const body = await jsonBody(request);
+        keys(body, ['id', 'word', 'meaning', 'language', 'example', 'example_cn', 'category', 'date', 'etymology']);
+        const word = {
+            id: uuid(body.id), word: str(body.word, 'word', 200), meaning: str(body.meaning, 'meaning', 4000),
+            language: choice(body.language, 'language', ['en', 'de']), example: str(body.example, 'example', 4000, true),
+            example_cn: str(body.example_cn, 'example_cn', 4000, true),
+            category: choice(body.category ?? '', 'category', ['daily', 'professional', 'formal', '']),
+            etymology: str(body.etymology, 'etymology', 8000, true),
+            ...(body.date === undefined || body.date === null ? {} : { date: calendarDate(body.date) }),
+        };
+        const data = await rpc(db, 'learning_save_word', userId, { p_word: word });
+        return result(data.word, { created: data.created, duplicate: data.duplicate, replayed: data.replayed });
+    }
+    if (path === 'practice-materials' && method === 'GET') {
+        read(); if (offset !== 0) invalid('混合练习自动选取一组材料，不支持分页偏移');
+        const prefs = await preferences(db, userId);
+        const data = await rpc(db, 'learning_get_practice_materials', userId, {
+            p_language: params.has('language') ? choice(params.get('language'), 'language', ['en', 'de']) : null,
+            p_timezone: timezone(params.get('timezone') || prefs.timezone), p_limit: limit,
+        });
+        return result(data.data, data.meta);
     }
     if (path === 'sentences' && method === 'GET') {
         read(); let query = db.from('saved_sentences').select(SENTENCE_COLUMNS).eq('user_id', userId);
@@ -109,10 +140,12 @@ export async function route(request: Request, db: SupabaseClient, identity: Iden
         const { data, error } = await query.order('created_at', { ascending: false }).order('id').range(offset, offset + limit); dbError(error); return page(data || [], limit, offset);
     }
     if (path === 'sessions' && method === 'POST') {
-        write(); const body = await jsonBody(request); keys(body, ['id', 'language', 'mode', 'topic', 'word_ids', 'target_minutes']);
-        const wordIds = strings(body.word_ids, 'word_ids', 50, 36).map(v => uuid(v, 'word_ids'));
-        if (!wordIds.length || new Set(wordIds).size !== wordIds.length) invalid('会话需包含不重复的词汇');
-        return result(await rpc(db, 'learning_create_session', userId, { p_session: { id: uuid(body.id), language: choice(body.language, 'language', ['en', 'de']), mode: choice(body.mode, 'mode', ['conversation', 'recall', 'cloze']), topic: str(body.topic, 'topic', 200, true), word_ids: wordIds, target_minutes: integer(body.target_minutes, 'target_minutes', 1, 60, 10) } }));
+        write(); const body = await jsonBody(request); keys(body, ['id', 'language', 'mode', 'topic', 'word_ids', 'sentence_ids', 'target_minutes']);
+        const wordIds = strings(body.word_ids ?? [], 'word_ids', 100, 36).map(v => uuid(v, 'word_ids'));
+        const sentenceIds = strings(body.sentence_ids ?? [], 'sentence_ids', 100, 36).map(v => uuid(v, 'sentence_ids'));
+        if (wordIds.length + sentenceIds.length < 1 || wordIds.length + sentenceIds.length > 100
+            || new Set(wordIds).size !== wordIds.length || new Set(sentenceIds).size !== sentenceIds.length) invalid('会话需包含 1–100 项不重复的词汇或句子');
+        return result(await rpc(db, 'learning_create_session', userId, { p_session: { id: uuid(body.id), language: choice(body.language, 'language', ['en', 'de', 'mixed']), mode: choice(body.mode, 'mode', ['conversation', 'recall', 'cloze']), topic: str(body.topic, 'topic', 200, true), word_ids: wordIds, sentence_ids: sentenceIds, target_minutes: integer(body.target_minutes, 'target_minutes', 1, 60, 10) } }));
     }
     if (/^sessions\/[^/]+$/.test(path)) {
         const id = uuid(path.split('/')[1]);

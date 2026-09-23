@@ -13,11 +13,13 @@ let calls: Call[];
 let token: Record<string, unknown> | null;
 let rows: unknown[];
 let rpcError: { code: string; message: string } | null;
+let rpcResult: unknown;
+let preferenceRow: Record<string, unknown> | null;
 let lastInserted: Record<string, unknown>;
 let handler: ReturnType<typeof createHandler>;
 
 beforeEach(() => {
-    calls = []; rows = []; rpcError = null; lastInserted = {};
+    calls = []; rows = []; rpcError = null; rpcResult = undefined; preferenceRow = null; lastInserted = {};
     token = { id: EVENT, user_id: USER, scopes: ['vocabulary:read'], expires_at: '2099-01-01T00:00:00Z', revoked_at: null };
     const db = createClient('https://test.supabase.co', 'server-only-test-key', {
         auth: { persistSession: false, autoRefreshToken: false },
@@ -29,12 +31,14 @@ beforeEach(() => {
             let data: unknown = rows;
             let status = 200;
             if (url.pathname === '/auth/v1/user') data = { id: USER, email: 'learner@example.test' };
-            else if (url.pathname.includes('/rpc/')) { data = rpcError || { event: body?.p_event, state: { word_id: WORD }, replayed: false }; if (rpcError) status = 400; }
+            else if (url.pathname.includes('/rpc/')) { data = rpcError || rpcResult || { event: body?.p_event, state: { word_id: WORD }, replayed: false }; if (rpcError) status = 400; }
             else if (url.pathname.endsWith('/api_access_tokens')) {
                 if (method === 'GET') data = url.searchParams.has('token_hash') ? token : [{ id: EVENT, name: 'Codex' }];
                 else if (method === 'POST') { lastInserted = body; data = { id: body.id, name: body.name, prefix: body.prefix, scopes: body.scopes }; }
+                else if (body?.scopes) data = token && !token.revoked_at && Date.parse(String(token.expires_at)) > Date.now()
+                    && url.searchParams.get('id') === `eq.${token.id}` ? { ...token, scopes: body.scopes } : null;
                 else data = { id: EVENT };
-            } else if (url.pathname.endsWith('/learning_preferences')) data = null;
+            } else if (url.pathname.endsWith('/learning_preferences')) data = preferenceRow;
             return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
         }) as typeof fetch },
     });
@@ -141,5 +145,95 @@ describe('learning API boundary', () => {
         const failing = createHandler(() => { throw new Error('private key'); });
         const response = await failing(new Request('https://vocab.example/api/v1/me'));
         expect(response.status).toBe(500); expect(await response.text()).not.toContain('private');
+    });
+
+    it('defaults mixed practice to 10 and never applies old language or size preferences', async () => {
+        preferenceRow = { language: 'de', session_size: 1, timezone: 'Pacific/Honolulu' };
+        rpcResult = { data: [
+            { kind: 'word', word: { id: WORD, language: 'en', user_id: USER }, state: { due: '2026-01-01', user_id: USER } },
+            { kind: 'sentence', sentence: { id: EVENT, language: 'de', user_id: USER } },
+        ], meta: { available: 200, count: 2, words_available: 190, sentences_available: 10,
+            selection: { due: 1, ahead: 0, sentences: 1 }, timezone: 'Pacific/Honolulu' } };
+        const response = await request('practice-materials');
+        expect(response.status).toBe(200);
+        const call = calls.find(c => c.url.pathname.endsWith('/learning_get_practice_materials'))!;
+        expect(call.body).toEqual({ p_user_id: USER, p_language: null, p_timezone: 'Pacific/Honolulu', p_limit: 10 });
+        const output = await response.json();
+        expect(output.meta.selection).toEqual({ due: 1, ahead: 0, sentences: 1 });
+        expect(JSON.stringify(output)).not.toContain('user_id');
+    });
+
+    it('only filters practice language when explicitly requested and validates sample bounds', async () => {
+        rpcResult = { data: [], meta: { available: 0, count: 0 } };
+        expect((await request('practice-materials?language=en&limit=8&timezone=UTC')).status).toBe(200);
+        expect(calls.find(c => c.url.pathname.endsWith('/learning_get_practice_materials'))?.body)
+            .toEqual({ p_user_id: USER, p_language: 'en', p_timezone: 'UTC', p_limit: 8 });
+        for (const query of ['language=mixed', 'limit=0', 'limit=101', 'offset=10', 'timezone=Invalid/Zone']) {
+            expect((await request(`practice-materials?${query}`)).status).toBe(400);
+        }
+    });
+
+    it('requires vocabulary:write separately and preserves the immutable add-word input', async () => {
+        const word = { id: EVENT, word: '  Straße  ', meaning: '街道', language: 'de' };
+        token!.scopes = ['vocabulary:read', 'practice:write', 'sentences:write'];
+        expect((await request('words', 'POST', word)).status).toBe(403);
+        token!.scopes = ['vocabulary:read', 'vocabulary:write'];
+        rpcResult = { word: { id: EVENT, word: 'Straße', meaning: '街道', user_id: USER }, created: true, duplicate: false, replayed: false };
+        const response = await request('words', 'POST', word);
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({ data: { id: EVENT, word: 'Straße', meaning: '街道' }, meta: { created: true, duplicate: false, replayed: false } });
+        const call = calls.find(c => c.url.pathname.endsWith('/learning_save_word'))!;
+        expect(call.body).toEqual({ p_user_id: USER, p_word: { id: EVENT, word: 'Straße', meaning: '街道', language: 'de', example: '', example_cn: '', category: '', etymology: '' } });
+        expect((call.body as { p_word: Record<string, unknown> }).p_word).not.toHaveProperty('date');
+    });
+
+    it('returns duplicate metadata and rejects invalid word dates, ownership and category', async () => {
+        token!.scopes = ['vocabulary:read', 'vocabulary:write'];
+        const word = { id: EVENT, word: 'HAUS', meaning: '房屋', language: 'de' };
+        rpcResult = { word: { id: WORD, word: 'Haus', meaning: '房子' }, created: false, duplicate: true, replayed: true };
+        const response = await request('words', 'POST', word);
+        expect(await response.json()).toEqual({ data: { id: WORD, word: 'Haus', meaning: '房子' }, meta: { created: false, duplicate: true, replayed: true } });
+        const rpcCount = () => calls.filter(c => c.url.pathname.includes('/rpc/')).length;
+        const count = rpcCount();
+        for (const changes of [{ date: '2026-02-30' }, { date: '20260210' }, { category: 'wrong' }, { user_id: WORD }, { word: '' }]) {
+            expect((await request('words', 'POST', { ...word, ...changes })).status).toBe(400);
+        }
+        expect(rpcCount()).toBe(count);
+    });
+
+    it('only the website session can change scopes of an active own token', async () => {
+        const body = { scopes: ['vocabulary:read', 'vocabulary:write', 'practice:write', 'sentences:write'] };
+        expect((await request(`tokens/${EVENT}`, 'PATCH', body)).status).toBe(403);
+        const response = await request(`tokens/${EVENT}`, 'PATCH', body, 'session-jwt');
+        expect(response.status).toBe(200);
+        expect((await response.json()).data.scopes).toEqual(body.scopes);
+        const update = calls.find(c => c.method === 'PATCH' && (c.body as Record<string, unknown>)?.scopes)!;
+        expect(update.url.searchParams.get('user_id')).toBe(`eq.${USER}`);
+        expect(update.url.searchParams.get('revoked_at')).toBe('is.null');
+        expect(update.url.searchParams.get('expires_at')).toMatch(/^gt\./);
+        expect(update.body).toEqual(body);
+        expect((await request(`tokens/${WORD}`, 'PATCH', body, 'session-jwt')).status).toBe(404);
+        token!.revoked_at = '2026-01-01';
+        expect((await request(`tokens/${EVENT}`, 'PATCH', body, 'session-jwt')).status).toBe(404);
+        token!.revoked_at = null; token!.expires_at = '2001-01-01';
+        expect((await request(`tokens/${EVENT}`, 'PATCH', body, 'session-jwt')).status).toBe(404);
+        expect((await request(`tokens/${EVENT}`, 'PATCH', { scopes: ['admin'] }, 'session-jwt')).status).toBe(400);
+    });
+
+    it('issues four-scope tokens and accepts mixed or sentence-only sessions without invented words', async () => {
+        const scopes = ['vocabulary:read', 'vocabulary:write', 'practice:write', 'sentences:write'];
+        expect((await request('tokens', 'POST', { name: 'Full practice', scopes }, 'session-jwt')).status).toBe(201);
+        expect(lastInserted.scopes).toEqual(scopes);
+        token!.scopes = scopes;
+        const common = { id: EVENT, language: 'mixed', mode: 'conversation', sentence_ids: [EVENT] };
+        expect((await request('sessions', 'POST', common)).status).toBe(200);
+        const call = calls.find(c => c.url.pathname.endsWith('/learning_create_session'))!;
+        expect(call.body).toMatchObject({ p_user_id: USER, p_session: { language: 'mixed', word_ids: [], sentence_ids: [EVENT] } });
+        expect((await request('sessions', 'POST', { ...common, word_ids: [WORD] })).status).toBe(200);
+        expect((await request('sessions', 'POST', { ...common, sentence_ids: [] })).status).toBe(400);
+        expect((await request('sessions', 'POST', { ...common, sentence_ids: [EVENT, EVENT] })).status).toBe(400);
+        rows = [{ id: EVENT, language: 'mixed', sentence_ids: [WORD] }];
+        expect((await request('sessions')).status).toBe(200);
+        expect(calls.find(c => c.method === 'GET' && c.url.pathname.endsWith('/practice_sessions'))?.url.searchParams.get('select')).toContain('sentence_ids');
     });
 });

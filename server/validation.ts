@@ -2,7 +2,7 @@ export class ApiError extends Error {
     constructor(public status: number, public code: string, message: string) { super(message); }
 }
 
-export const SCOPES = ['vocabulary:read', 'practice:write', 'sentences:write'] as const;
+export const SCOPES = ['vocabulary:read', 'vocabulary:write', 'practice:write', 'sentences:write'] as const;
 export const DEFAULT_PREFERENCES = { language: 'de', timezone: 'Europe/Berlin', session_size: 10, duration_minutes: 10, correction_style: 'after_answer', interests: [] as string[] };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -52,6 +52,22 @@ export function timestamp(value: unknown): string {
     if (!/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(raw) || !Number.isFinite(Date.parse(raw))) invalid('practiced_at 必须为带时区的 ISO 时间');
     if (Date.parse(raw) > Date.now() + 5 * 60_000) invalid('练习时间不能在未来');
     return new Date(raw).toISOString();
+}
+
+export function calendarDate(value: unknown): string {
+    const raw = str(value, 'date', 10);
+    const parsed = new Date(`${raw}T00:00:00Z`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw) || raw.startsWith('0000') || !Number.isFinite(parsed.getTime())
+        || parsed.toISOString().slice(0, 10) !== raw) invalid('date 必须为有效的 YYYY-MM-DD 日期');
+    return raw;
+}
+
+export function tokenScopes(value: unknown): string[] {
+    const scopes = [...new Set(strings(value, 'scopes', SCOPES.length))];
+    if (!scopes.includes('vocabulary:read') || scopes.some(scope => !(SCOPES as readonly string[]).includes(scope))) {
+        invalid('连接必须包含读词权限，且只能选择支持的权限');
+    }
+    return scopes;
 }
 
 export async function jsonBody(request: Request): Promise<Record<string, unknown>> {
