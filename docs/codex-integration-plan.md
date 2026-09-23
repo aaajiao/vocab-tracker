@@ -29,6 +29,9 @@
 
 后续按三个阶段交付：先补齐按现有 SRS 选材、混合会话和新增单词 API；再简化网页设置、统一样式并更新 Codex Skill；最后完成安装、迁移、上线与隔离账号验收。默认练习为 10 项，英德语自动安排。记忆曲线决定单词优先级，句子抽取和题型、语境提供变化，不进行脱离排期的完全随机选词。
 
+- `7fcd7de`：复用 SRS 的混合选材、同到期日随机、新词写入及混合会话 API。
+- `433ebcc`：精简设置与样式统一，Codex 自动带练和新增词/句。
+
 ## API 契约
 
 前缀 `/api/v1`。请求头 `Authorization: Bearer <token>`，支持网站的 Supabase access token 和 `vt_` 开头的个人访问令牌。个人令牌仅保存 SHA-256 摘要，可过期、撤销；权限为 `vocabulary:read`、`vocabulary:write`、`practice:write`、`sentences:write`。令牌管理只接受网站登录。所有请求的用户来自验证后的身份，绝不接受客户端指定 user_id。

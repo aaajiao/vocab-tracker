@@ -60,7 +60,7 @@ Visit http://localhost:5173
 
 ## Codex vocabulary practice
 
-Open **Settings → 连接 Codex** to create a scoped access token. Install the companion Skill with `bun run codex:install`, then connect in your terminal. Codex can read your saved words, lead recall or conversation practice, and save completed attempts and summaries back to this app. See [setup, API, and deployment details](docs/codex-learning-api.md).
+Open **Settings → Codex 练习** to create a connection. Install the companion Skill with `bun run codex:install`, then connect in your terminal. Codex automatically builds 10 exercises from your words and saved sentences across English and German, prioritizing the same spaced-repetition schedule used on the website. It saves completed attempts and summaries, and can add words or sentences when you ask. No language, category, or session settings are required. See [setup, API, and deployment details](docs/codex-learning-api.md).
 
 For local API development, run `bun run dev:api` alongside `bun run dev`. Set `SUPABASE_SERVICE_ROLE_KEY` in your ignored local environment and Vercel's server environment; never prefix this secret with `VITE_`.
 
