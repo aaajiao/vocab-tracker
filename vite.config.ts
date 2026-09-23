@@ -87,6 +87,21 @@ export default defineConfig({
       }
     })
   ],
+  build: {
+    rolldownOptions: {
+      output: {
+        // 依赖独立缓存，应用修改不再使整个 React/Supabase 包失效。
+        // 保留源模块执行顺序，避免拆分改变初始化时机。
+        strictExecutionOrder: true,
+        codeSplitting: {
+          groups: [
+            { name: 'react-vendor', test: /node_modules[\\/](?:react|react-dom|scheduler)[\\/]/ },
+            { name: 'supabase-vendor', test: /node_modules[\\/]@supabase[\\/]/ }
+          ]
+        }
+      }
+    }
+  },
   // ===========================================
   // Development Server Configuration
   // 开发服务器配置
