@@ -13,6 +13,18 @@
 
 每一阶段通过相关检查后单独 commit，再进入下一阶段。并行编写的文件按交付阶段分别提交。
 
+## 交付记录
+
+- `23ee0f8`：分阶段计划与接口契约。
+- `38fc053`：鉴权 API、数据库及验证。
+- `c6988f0`：网页连接、偏好和练习历史。
+- `d18a543`：Codex Skill、客户端及安装器。
+- `fb172c4`：统一事件、离线恢复、账号隔离与时区。
+- `c74ac40`：v1.9.0 文档与部署配置。
+- `fbfcac9`：根据生产运行验证修正 Node ESM 模块路径。
+
+实际验收结果见 [验证记录](codex-verification.md)。
+
 ## API 契约
 
 前缀 `/api/v1`。请求头 `Authorization: Bearer <token>`，支持网站的 Supabase access token 和 `vt_` 开头的个人访问令牌。个人令牌仅保存 SHA-256 摘要，可过期、撤销；权限为 `vocabulary:read`、`practice:write`、`sentences:write`。令牌管理只接受网站登录。所有请求的用户来自验证后的身份，绝不接受客户端指定 user_id。

@@ -881,10 +881,10 @@ function App() {
                 <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
                     <div className="flex items-center gap-2 mb-2">
                         <span className="text-xl">⚠️</span>
-                        <h3 className="text-sm font-semibold text-red-600 m-0">需要 OpenAI API Key</h3>
+                        <h3 className="text-sm font-semibold text-red-600 m-0">网页 AI 功能尚未配置</h3>
                     </div>
                     <p className="text-xs text-red-700 mb-3 leading-relaxed">
-                        本应用使用 OpenAI 进行翻译、例句生成和语音朗读。
+                        网页中的自动翻译、例句生成和朗读需要 OpenAI API Key。Codex 复习可以直接使用已有词汇。
                         <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline ml-1">
                             获取 API Key →
                         </a>

@@ -68,4 +68,4 @@ VOCAB_TEST_KEYCHAIN=1 bun test tests/codex/keychain.test.ts
 bun run verify:api --base-url=https://your-deployment
 ```
 
-最后一个命令需要服务端凭据，会创建隔离临时账号与词汇，验证真实 API 后清理；`--keep-fixture` 仅用于本地浏览器验收，文件写在忽略且限权的 `artifacts/`，随后必须清理临时账号。真实语音的听说、打断及延迟需由用户实际参与验收，文本与接口测试不能替代。
+最后一个命令需要服务端凭据，会创建隔离临时账号与词汇，验证真实 API 后清理；`--keep-fixture` 仅用于浏览器验收，文件写在忽略且限权的 `artifacts/`，随后执行 `bun scripts/cleanup-learning-fixture.ts` 清理临时账号。真实语音的听说、打断及延迟需由用户实际参与验收，文本与接口测试不能替代。
