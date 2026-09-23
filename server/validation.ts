@@ -70,6 +70,27 @@ export function tokenScopes(value: unknown): string[] {
     return scopes;
 }
 
+export function sentenceAnnotations(value: unknown, kind: 'keywords' | 'grammar'): Record<string, string>[] {
+    const list = value ?? [];
+    if (!Array.isArray(list) || list.length > 50) invalid(`${kind} 格式错误或数量过多`);
+    return list.map((entry): Record<string, string> => {
+        const item = object(entry);
+        if (kind === 'keywords') {
+            keys(item, ['word', 'meaning', 'partOfSpeech']);
+            return { word: str(item.word, 'word', 200), meaning: str(item.meaning, 'meaning', 1000),
+                ...(item.partOfSpeech === undefined ? {} : { partOfSpeech: str(item.partOfSpeech, 'partOfSpeech', 80, true) }) };
+        }
+        keys(item, ['point', 'explanation']);
+        return { point: str(item.point, 'point', 200), explanation: str(item.explanation, 'explanation', 2000) };
+    });
+}
+
+export function createdTimestamp(value: unknown): string {
+    const raw = str(value, 'created_at', 40);
+    if (!/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(raw) || !Number.isFinite(Date.parse(raw))) invalid('created_at 必须为带时区的 ISO 时间');
+    return new Date(raw).toISOString();
+}
+
 export async function jsonBody(request: Request): Promise<Record<string, unknown>> {
     if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) throw new ApiError(415, 'content_type', '请发送 application/json');
     const reader = request.body?.getReader();

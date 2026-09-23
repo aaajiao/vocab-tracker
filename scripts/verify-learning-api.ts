@@ -99,9 +99,20 @@ try {
     const parallelWords = Array.from({ length: 3 }, () => ({ id: randomUUID(), word: 'availability', meaning: '可用性；空闲时间', language: 'en' }));
     const savedWords = await Promise.all(parallelWords.map(body => call('/words', accessToken, 'POST', body)));
     check(savedWords.filter(value => value.meta.created).length === 1 && new Set(savedWords.map(value => value.data.id)).size === 1, 'parallel additions create one normalized word');
-    const deleted = await service.from('words').delete().eq('user_id', userId).eq('id', savedWords[0].data.id);
-    if (deleted.error) throw new Error('Test word deletion failed');
+    await call(`/words/${savedWords[0].data.id}`, accessToken, 'DELETE', undefined, 403);
+    await call(`/words/${savedWords[0].data.id}`, jwt, 'PATCH', { example: 'What is your availability?', example_cn: '您什么时候有空？' });
+    await call(`/words/${savedWords[0].data.id}`, jwt, 'DELETE');
+    await call(`/words/${savedWords[0].data.id}`, jwt, 'DELETE');
     await call('/words', accessToken, 'POST', parallelWords[0], 404);
+    const browserSentence = { id: randomUUID(), sentence: 'Ich möchte den Termin ändern.', sentence_cn: '我想更改预约。', language: 'de', source_type: 'input',
+        keywords: [{ word: 'Termin', meaning: '预约', partOfSpeech: 'noun' }], grammar: [{ point: '情态动词', explanation: 'möchte 后接动词原形。' }], created_at: '2026-01-01T12:00:00Z' };
+    const savedSentence = await call('/sentences', jwt, 'POST', browserSentence);
+    check(savedSentence.data.source_type === 'input' && savedSentence.data.keywords[0].word === 'Termin' && savedSentence.data.grammar.length === 1, 'web sentence preserves analysis metadata');
+    const retrySentence = await call('/sentences', jwt, 'POST', browserSentence);
+    check(retrySentence.data.created_at === savedSentence.data.created_at, 'sentence retry preserves original timestamp');
+    await call(`/sentences/${browserSentence.id}`, accessToken, 'DELETE', undefined, 403);
+    await call(`/sentences/${browserSentence.id}`, jwt, 'DELETE');
+    await call('/sentences', jwt, 'POST', browserSentence, 404);
     await call(`/tokens/${readOnly.data.token.id}`, jwt, 'DELETE');
     await call(`/tokens/${readOnly.data.token.id}`, jwt, 'PATCH', { scopes }, 404);
     await call('/words', readToken, 'GET', undefined, 401);

@@ -45,7 +45,10 @@ JSON 成功返回 `{ data, meta? }`；错误返回 `{ error: { code, message } }
 | POST /words | id(UUID), word, meaning, language=en/de, example?, example_cn?, category?, date?, etymology? | 词汇，meta 附 created/duplicate/replayed；日期默认当前学习时区的今天 |
 | GET /practice-materials | limit=10, language=en/de?, timezone? | `{kind:'word',word,state}` / `{kind:'sentence',sentence}`；meta 附 available/count/selection/timezone |
 | GET /sentences | language, q, limit, offset | 收藏句 |
-| POST /sentences | id(UUID，重试保持一致), sentence, sentence_cn, language, scene, source_words | 保存收藏句 |
+| POST /sentences | id(UUID，重试保持一致), sentence, sentence_cn, language, scene, source_words, source_type?, keywords?, grammar?, created_at? | 保存完整收藏句；收据防止重复与删除后重放 |
+| DELETE /words/:id | 仅网页登录 | 幂等删除自己的词汇，重复删除仍成功 |
+| PATCH /words/:id | 仅网页登录，example?, example_cn? | 更新例句并返回词汇 |
+| DELETE /sentences/:id | 仅网页登录 | 幂等删除自己的收藏句 |
 | GET /review | language, mode=due/ahead/all, timezone, limit, offset | `{word, state}` 列表，meta 附 counts |
 | GET /tokens | — | 令牌元数据列表（无摘要或明文） |
 | POST /tokens | name, scopes, expires_in_days=1..365 | `{token, access_token}`，明文仅此一次 |

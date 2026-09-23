@@ -51,6 +51,44 @@ function request(path = 'words', method = 'GET', body?: unknown, bearer: string 
 const event = () => ({ id: EVENT, word_id: WORD, grade: 'known', source: 'codex', practiced_at: '2026-01-01T12:00:00Z', timezone: 'Europe/Berlin' });
 
 describe('learning API boundary', () => {
+    it('keeps browser deletion owner-scoped and idempotent without granting delete to add-only tokens', async () => {
+        token!.scopes = ['vocabulary:read', 'vocabulary:write', 'sentences:write'];
+        expect((await request(`words/${WORD}`, 'DELETE')).status).toBe(403);
+        expect((await request(`sentences/${WORD}`, 'DELETE')).status).toBe(403);
+        for (const kind of ['words', 'sentences']) {
+            expect((await request(`${kind}/${WORD}`, 'DELETE', undefined, 'session-jwt')).status).toBe(200);
+            expect((await request(`${kind}/${WORD}`, 'DELETE', undefined, 'session-jwt')).status).toBe(200);
+        }
+        const deletes = calls.filter(call => call.method === 'DELETE');
+        expect(deletes).toHaveLength(4);
+        deletes.forEach(call => {
+            expect(call.url.searchParams.get('user_id')).toBe(`eq.${USER}`);
+            expect(call.url.searchParams.get('id')).toBe(`eq.${WORD}`);
+        });
+    });
+    it('validates browser example edits and preserves ownership', async () => {
+        expect((await request(`words/${WORD}`, 'PATCH', { example: 'Hello' })).status).toBe(403);
+        expect((await request(`words/${WORD}`, 'PATCH', { user_id: WORD }, 'session-jwt')).status).toBe(400);
+        expect((await request(`words/${WORD}`, 'PATCH', {}, 'session-jwt')).status).toBe(400);
+        rows = [{ id: WORD, word: 'Haus', example: 'Das Haus.', user_id: USER }];
+        const response = await request(`words/${WORD}`, 'PATCH', { example: 'Das Haus.', example_cn: '这所房子。' }, 'session-jwt');
+        expect(response.status).toBe(200);
+        const update = calls.find(call => call.method === 'PATCH' && call.url.pathname.endsWith('/words'))!;
+        expect(update.url.searchParams.get('user_id')).toBe(`eq.${USER}`);
+        expect(update.body).toEqual({ example: 'Das Haus.', example_cn: '这所房子。' });
+        expect(JSON.stringify(await response.json())).not.toContain('user_id');
+    });
+    it('preserves sentence analysis and original timestamp through the shared API', async () => {
+        const body = { id: EVENT, sentence: 'Das Haus ist groß.', sentence_cn: '这房子很大。', language: 'de',
+            source_type: 'input', keywords: [{ word: 'Haus', meaning: '房子', partOfSpeech: 'noun' }],
+            grammar: [{ point: '主系表', explanation: 'ist 连接主语与形容词。' }], created_at: '2026-09-01T12:00:00+02:00' };
+        expect((await request('sentences', 'POST', body, 'session-jwt')).status).toBe(200);
+        const call = calls.find(call => call.url.pathname.endsWith('/learning_save_sentence'))!;
+        expect(call.body).toMatchObject({ p_user_id: USER, p_sentence: { ...body, created_at: '2026-09-01T10:00:00.000Z' } });
+        for (const patch of [{ keywords: [{ word: 'Haus' }] }, { grammar: [{ point: 'x', explanation: 'x', injection: 'y' }] }, { created_at: 'yesterday' }]) {
+            expect((await request('sentences', 'POST', { ...body, ...patch }, 'session-jwt')).status).toBe(400);
+        }
+    });
     it('requires a credential and does not query the database without one', async () => {
         const response = await request('words', 'GET', undefined, null);
         expect(response.status).toBe(401); expect(calls).toHaveLength(0);

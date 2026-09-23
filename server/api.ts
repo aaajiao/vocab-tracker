@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getServiceClient } from './client.js';
 import { authenticate, newToken, requireScope, requireSession, TOKEN_COLUMNS, type Identity } from './auth.js';
-import { ApiError, DEFAULT_PREFERENCES, calendarDate, choice, integer, invalid, jsonBody, keys, str, strings, timezone, tokenScopes, uuid, validateEvent } from './validation.js';
+import { ApiError, DEFAULT_PREFERENCES, calendarDate, choice, createdTimestamp, integer, invalid, jsonBody, keys, sentenceAnnotations, str, strings, timezone, tokenScopes, uuid, validateEvent } from './validation.js';
 
 const WORD_COLUMNS = 'id,word,meaning,language,example,example_cn,category,date,created_at,etymology';
 const SENTENCE_COLUMNS = 'id,sentence,sentence_cn,language,scene,source_type,source_words,keywords,grammar,created_at';
@@ -100,6 +100,25 @@ export async function route(request: Request, db: SupabaseClient, identity: Iden
         });
         return result(data.data, data.meta);
     }
+    if (/^(words|sentences)\/[^/]+$/.test(path) && (method === 'DELETE' || method === 'PATCH')) {
+        // 网页编辑使用登录会话；新增权限不扩大为外部连接的删除权限。
+        requireSession(identity);
+        const [kind, rawId] = path.split('/');
+        const id = uuid(rawId);
+        if (method === 'DELETE') {
+            const { error } = await db.from(kind === 'words' ? 'words' : 'saved_sentences').delete().eq('id', id).eq('user_id', userId);
+            dbError(error); return result({ id, deleted: true });
+        }
+        if (kind === 'words') {
+            const body = await jsonBody(request); keys(body, ['example', 'example_cn']);
+            const patch: Record<string, string> = {};
+            for (const key of ['example', 'example_cn']) if (body[key] !== undefined) patch[key] = str(body[key], key, 4000, true);
+            if (!Object.keys(patch).length) invalid('请提供需要更新的例句');
+            const { data, error } = await db.from('words').update(patch).eq('id', id).eq('user_id', userId).select(WORD_COLUMNS).maybeSingle();
+            dbError(error); if (!data) throw new ApiError(404, 'not_found', '词汇不存在或已删除');
+            return result(data);
+        }
+    }
     if (path === 'sentences' && method === 'GET') {
         read(); let query = db.from('saved_sentences').select(SENTENCE_COLUMNS).eq('user_id', userId);
         if (params.has('language')) query = query.eq('language', choice(params.get('language'), 'language', ['en', 'de']));
@@ -109,8 +128,11 @@ export async function route(request: Request, db: SupabaseClient, identity: Iden
     }
     if (path === 'sentences' && method === 'POST') {
         requireScope(identity, 'sentences:write'); const body = await jsonBody(request);
-        keys(body, ['id', 'sentence', 'sentence_cn', 'language', 'scene', 'source_words']);
-        const sentence = { id: uuid(body.id), sentence: str(body.sentence, 'sentence', 4000), sentence_cn: str(body.sentence_cn, 'sentence_cn', 4000, true), language: choice(body.language, 'language', ['en', 'de']), scene: str(body.scene, 'scene', 100, true), source_words: strings(body.source_words ?? [], 'source_words', 50, 200) };
+        keys(body, ['id', 'sentence', 'sentence_cn', 'language', 'scene', 'source_words', 'source_type', 'keywords', 'grammar', 'created_at']);
+        const sentence = { id: uuid(body.id), sentence: str(body.sentence, 'sentence', 4000), sentence_cn: str(body.sentence_cn, 'sentence_cn', 4000, true), language: choice(body.language, 'language', ['en', 'de']), scene: str(body.scene, 'scene', 100, true), source_words: strings(body.source_words ?? [], 'source_words', 50, 200),
+            source_type: choice(body.source_type, 'source_type', ['word', 'combined', 'input'], 'combined'),
+            keywords: sentenceAnnotations(body.keywords, 'keywords'), grammar: sentenceAnnotations(body.grammar, 'grammar'),
+            ...(body.created_at === undefined ? {} : { created_at: createdTimestamp(body.created_at) }) };
         return result(await rpc(db, 'learning_save_sentence', userId, { p_sentence: sentence }));
     }
     if (path === 'review' && method === 'GET') {
